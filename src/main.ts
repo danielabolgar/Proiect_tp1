@@ -1,7 +1,7 @@
 import './style.css'
 import { Grid } from './Grid'
 import { Piece } from './Piece'
-import { CAMPAIGN_LEVELS, POWERUP_COSTS } from './constants'
+import { CAMPAIGN_LEVELS } from './constants'
 
 const app = document.querySelector<HTMLDivElement>('#app')!;
 
@@ -31,14 +31,17 @@ let moveTimeLeft = 0;          // secunde rămase
 let moveTimerInterval: number | null = null;
 let timerWarning = false;      // flash roșu când < 5s
 
-// Power-ups
-let bombActive = false;        // modul bomb: următorul tap pe tablă => explozie 3x3
-let undoScorSnapshot = 0;      // scorul înainte de ultima mutare (pentru Undo)
-let undoPieseSnapshot: { shape: number[][], color: string, isTitan: boolean, x: number, y: number }[] = [];
+
 
 // Particule
-interface Particle { x: number; y: number; vx: number; vy: number; life: number; color: string; }
+interface Particle { x: number; y: number; vx: number; vy: number; life: number; color: string; size?: number; }
 let particles: Particle[] = [];
+
+// Tranziție nivel — titlu flash
+let levelTransition: { title: string; alpha: number; timer: number } | null = null;
+
+// Animație finală nivel 10
+let winParticlesActive = false;
 
 // Mouse / touch position
 let mouseCanvasX = 0;
@@ -96,15 +99,7 @@ app.innerHTML = `
       </div>
       <span id="timer-text">30s</span>
     </div>
-    <!-- Power-ups -->
-    <div class="powerup-row">
-      <button class="pu-btn" id="pu-bomb" title="Bomb — distruge 3x3 (cost: ${POWERUP_COSTS.BOMB} pts)">
-        💣 BOMB <span class="pu-cost">${POWERUP_COSTS.BOMB}</span>
-      </button>
-      <button class="pu-btn" id="pu-undo" title="Undo — anulează ultima mutare (cost: ${POWERUP_COSTS.UNDO} pts)">
-        ↩ UNDO <span class="pu-cost">${POWERUP_COSTS.UNDO}</span>
-      </button>
-    </div>
+
   </div>
 
   <!-- CANVAS -->
@@ -174,9 +169,20 @@ function drawParticles() {
     ctx.globalAlpha = p.life;
     ctx.shadowBlur = 15; ctx.shadowColor = p.color;
     ctx.fillStyle = p.color;
-    ctx.fillRect(p.x, p.y, 3, 3);
+    const sz = p.size || 3;
+    ctx.fillRect(p.x, p.y, sz, sz);
   });
   ctx.globalAlpha = 1; ctx.shadowBlur = 0;
+}
+
+// ─── HELPER PIESE ─────────────────────────────────────────────────────────────
+function makePiece(): Piece {
+  if (gameMode === 'campaign') {
+    const lvl = CAMPAIGN_LEVELS[campaignLevel];
+    const titanChance = campaignLevel >= 2 ? 0.3 : 0.2;
+    return new Piece(titanChance, lvl.complexityWeight);
+  }
+  return new Piece(0.2, 0.15);
 }
 
 // ─── TIMER ────────────────────────────────────────────────────────────────────
@@ -236,32 +242,6 @@ function updateHUD() {
     document.getElementById('hud-nivel-wrap')!.style.display = 'none';
     document.getElementById('hud-target-wrap')!.style.display = 'none';
   }
-  // Power-up buttons
-  const bombBtn = document.getElementById('pu-bomb') as HTMLButtonElement;
-  const undoBtn = document.getElementById('pu-undo') as HTMLButtonElement;
-  bombBtn.disabled = scor < POWERUP_COSTS.BOMB || bombActive;
-  bombBtn.classList.toggle('pu-active', bombActive);
-  undoBtn.disabled = scor < POWERUP_COSTS.UNDO || !grid.hasSavedState();
-}
-
-function saveUndoSnapshot() {
-  undoScorSnapshot = scor;
-  undoPieseSnapshot = pieseDisponibile.map(p => ({ shape: p.cloneShape(), color: p.color, isTitan: p.isTitan, x: p.x, y: p.y }));
-  grid.saveState();
-}
-
-function restoreUndoSnapshot() {
-  scor = undoScorSnapshot;
-  pieseDisponibile = undoPieseSnapshot.map(snap => {
-    const p = new Piece();
-    p.shape = snap.shape;
-    p.color = snap.color;
-    p.isTitan = snap.isTitan;
-    p.x = snap.x;
-    p.y = snap.y;
-    return p;
-  });
-  grid.restoreState();
 }
 
 // ─── GAME OVER / WIN ──────────────────────────────────────────────────────────
@@ -292,10 +272,59 @@ function triggerLevelComplete() {
   showOnly('screen-level');
 }
 
+function showLevelTitle(title: string) {
+  levelTransition = { title, alpha: 1.0, timer: 120 }; // ~2s la 60fps
+}
+
+function spawnWinParticles() {
+  const colors = ['#ffd700', '#fff700', '#ffaa00', '#ffffff', '#ffe680'];
+  for (let i = 0; i < 6; i++) {
+    particles.push({
+      x: Math.random() * canvas.width,
+      y: -10,
+      vx: (Math.random() - 0.5) * 3,
+      vy: 1.5 + Math.random() * 3,
+      life: 1.0,
+      color: colors[Math.floor(Math.random() * colors.length)],
+      size: 3 + Math.random() * 5,
+    });
+  }
+}
+
+function drawLevelTransition() {
+  if (!levelTransition) return;
+  levelTransition.timer--;
+  if (levelTransition.timer <= 30) {
+    levelTransition.alpha = levelTransition.timer / 30;
+  }
+  if (levelTransition.timer <= 0) { levelTransition = null; return; }
+
+  ctx.save();
+  ctx.globalAlpha = levelTransition.alpha;
+  // Fundal semi-transparent
+  ctx.fillStyle = 'rgba(0,0,0,0.55)';
+  ctx.fillRect(0, canvas.height / 2 - 50, canvas.width, 100);
+  // Text titlu
+  ctx.font = 'bold 26px Orbitron, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.shadowBlur = 30;
+  ctx.shadowColor = '#00ffff';
+  ctx.fillStyle = '#00ffff';
+  ctx.fillText(levelTransition.title, canvas.width / 2, canvas.height / 2 - 8);
+  // Sub-titlu nivel
+  ctx.font = '11px Orbitron, sans-serif';
+  ctx.fillStyle = 'rgba(224,230,237,0.8)';
+  ctx.shadowBlur = 0;
+  const lvl = CAMPAIGN_LEVELS[campaignLevel];
+  ctx.fillText(lvl.description, canvas.width / 2, canvas.height / 2 + 18);
+  ctx.restore();
+}
+
 function triggerYouWin() {
   stopMoveTimer();
   checkAndSaveHS();
   screen = 'you_win';
+  winParticlesActive = true;
   document.getElementById('win-score')!.innerText = 'SCOR FINAL: ' + scor;
   document.getElementById('win-hs')!.innerText = 'HIGH SCORE: ' + highScore;
   showOnly('screen-win');
@@ -347,20 +376,6 @@ canvas.addEventListener('pointerdown', (e: PointerEvent) => {
   const mouseX = e.clientX - rect.left;
   const mouseY = e.clientY - rect.top;
 
-  // Modul BOMB: tap pe tablă
-  if (bombActive) {
-    const gridX = Math.floor(mouseX / grid.cellSize);
-    const gridY = Math.floor(mouseY / grid.cellSize);
-    if (gridX >= 0 && gridX < grid.size && gridY >= 0 && gridY < grid.size) {
-      const result = grid.applyBomb(gridX, gridY);
-      result.destroyedCells.forEach(cell => createExplosion(cell.x, cell.y, cell.color, 20));
-      scor = Math.max(0, scor - POWERUP_COSTS.BOMB);
-      bombActive = false;
-      handleMoveLogic();
-    }
-    return;
-  }
-
   // Selectare piesă
   const CELL_PREV = 28; 
   pieseDisponibile.forEach(piece => {
@@ -405,12 +420,11 @@ window.addEventListener('pointerup', () => {
 
   if (ghostGridX !== null && ghostGridY !== null &&
       grid.verifica_validitate(piesaSelectata.shape, ghostGridX, ghostGridY)) {
-    saveUndoSnapshot();
     grid.plaseaza_piesa(piesaSelectata.shape, ghostGridX, ghostGridY);
     
     const index = pieseDisponibile.indexOf(piesaSelectata);
     if (index !== -1) {
-      pieseDisponibile[index] = new Piece(gameMode === 'campaign' && campaignLevel >= 2 ? 0.3 : 0.2);
+      pieseDisponibile[index] = makePiece();
     }
     scor += 10;
     
@@ -426,21 +440,6 @@ window.addEventListener('pointerup', () => {
   ghostGridX = null;
   ghostGridY = null;
   snapValid = false;
-});
-
-// ─── POWER-UP BUTTONS ─────────────────────────────────────────────────────────
-document.getElementById('pu-bomb')!.addEventListener('click', () => {
-  if (scor < POWERUP_COSTS.BOMB || bombActive) return;
-  bombActive = !bombActive;
-  updateHUD();
-});
-
-document.getElementById('pu-undo')!.addEventListener('click', () => {
-  if (scor < POWERUP_COSTS.UNDO || !grid.hasSavedState()) return;
-  scor -= POWERUP_COSTS.UNDO;
-  restoreUndoSnapshot();
-  startMoveTimer();
-  updateHUD();
 });
 
 // ─── NAVIGARE BUTOANE ─────────────────────────────────────────────────────────
@@ -463,11 +462,14 @@ document.getElementById('btn-next')!.addEventListener('click', () => {
   }
   campaignLevel++;
   grid.reset();
-  pieseDisponibile = [new Piece(0.3), new Piece(0.3), new Piece(0.3)];
+  const lvl = CAMPAIGN_LEVELS[campaignLevel];
+  if (lvl.preFillCount > 0) grid.preFill(lvl.preFillCount);
+  pieseDisponibile = [makePiece(), makePiece(), makePiece()];
   screen = 'playing';
   showOnly('screen-hud');
   updateHUD();
   startMoveTimer();
+  showLevelTitle(lvl.title);
 });
 
 document.getElementById('btn-win-restart')!.addEventListener('click', () => {
@@ -484,14 +486,21 @@ function startGame(mode: GameMode) {
   scor = 0;
   campaignLevel = 0;
   mutariEfectuate = 0;
-  bombActive = false;
   particles = [];
+  winParticlesActive = false;
+  levelTransition = null;
   grid.reset();
-  pieseDisponibile = [new Piece(), new Piece(), new Piece()];
+  if (mode === 'campaign') {
+    const lvl = CAMPAIGN_LEVELS[0];
+    if (lvl.preFillCount > 0) grid.preFill(lvl.preFillCount);
+  }
+  pieseDisponibile = [makePiece(), makePiece(), makePiece()];
   screen = 'playing';
   showOnly('screen-hud');
   updateHUD();
   startMoveTimer();
+  // Afișează titlul primului nivel
+  if (mode === 'campaign') showLevelTitle(CAMPAIGN_LEVELS[0].title);
 }
 
 // ─── RENDER LOOP ──────────────────────────────────────────────────────────────
@@ -520,39 +529,30 @@ function drawGhostPreview() {
   }
 }
 
-function drawBombHover() {
-  if (!bombActive) return;
-  const gx = Math.floor(mouseCanvasX / grid.cellSize);
-  const gy = Math.floor(mouseCanvasY / grid.cellSize);
-  if (gx < 0 || gx >= grid.size || gy < 0 || gy >= grid.size) return;
-
-  ctx.strokeStyle = 'rgba(255,60,60,0.9)';
-  ctx.fillStyle = 'rgba(255,40,40,0.12)';
-  ctx.lineWidth = 2;
-  ctx.setLineDash([4, 3]);
-  for (let r = gy - 1; r <= gy + 1; r++) {
-    for (let c = gx - 1; c <= gx + 1; c++) {
-      if (r >= 0 && r < grid.size && c >= 0 && c < grid.size) {
-        ctx.fillRect(c * grid.cellSize + 1, r * grid.cellSize + 1, grid.cellSize - 2, grid.cellSize - 2);
-        ctx.strokeRect(c * grid.cellSize + 1, r * grid.cellSize + 1, grid.cellSize - 2, grid.cellSize - 2);
-      }
-    }
-  }
-  ctx.setLineDash([]);
-
-  ctx.strokeStyle = '#ff3333';
-  ctx.lineWidth = 2;
-  const cx = gx * grid.cellSize + grid.cellSize / 2;
-  const cy = gy * grid.cellSize + grid.cellSize / 2;
-  ctx.beginPath();
-  ctx.moveTo(cx - 8, cy); ctx.lineTo(cx + 8, cy);
-  ctx.moveTo(cx, cy - 8); ctx.lineTo(cx, cy + 8);
-  ctx.stroke();
-}
-
 function gameLoop() {
   ctx.fillStyle = '#020204';
   ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  // Particule gold pentru YOU WIN (nivel 10)
+  if (winParticlesActive) {
+    spawnWinParticles();
+    particles.forEach(p => {
+      ctx.globalAlpha = p.life * 0.85;
+      ctx.shadowBlur = 10;
+      ctx.shadowColor = p.color;
+      ctx.fillStyle = p.color;
+      const sz = (p as any).size || 3;
+      ctx.fillRect(p.x, p.y, sz, sz);
+      p.x += p.vx;
+      p.y += p.vy;
+      p.life -= 0.008;
+    });
+    particles = particles.filter(p => p.life > 0);
+    ctx.globalAlpha = 1;
+    ctx.shadowBlur = 0;
+    requestAnimationFrame(gameLoop);
+    return;
+  }
 
   updateParticles();
   drawParticles();
@@ -561,7 +561,6 @@ function gameLoop() {
     grid.draw(ctx);
 
     if (piesaInMana) drawGhostPreview();
-    drawBombHover();
 
     const timp = Date.now() * 0.003;
     const PIESE_Y_BASE = 450;
@@ -599,6 +598,9 @@ function gameLoop() {
     ctx.lineTo(390, 415);
     ctx.stroke();
     ctx.setLineDash([]);
+
+    // Titlu nivel — apare la tranziție, dispare după ~2s
+    drawLevelTransition();
   }
 
   requestAnimationFrame(gameLoop);

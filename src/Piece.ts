@@ -7,32 +7,37 @@ export class Piece {
   x: number = 0;
   y: number = 0;
 
-  constructor(titanChance: number = 0.2) {
-    this.shape = this.generateRandomShape();
+  constructor(titanChance: number = 0.2, complexityWeight: number = 0.2) {
+    this.shape = this.generateRandomShape(complexityWeight);
     this.isTitan = Math.random() < titanChance;
     if (this.isTitan) this.injectTitan();
     this.color = this.isTitan ? '#457B9D' : COLORS[Math.floor(Math.random() * COLORS.length)];
   }
 
-  // Returnează o copie profundă a formei (pentru Undo)
   cloneShape(): number[][] {
     return this.shape.map(row => [...row]);
   }
 
-  private generateRandomShape(): number[][] {
-    const models = [
-      [[1, 1], [1, 1]],
-      [[1, 1, 1, 1]],
-      [[1], [1], [1], [1]],
-      [[1, 1, 0], [0, 1, 1]],
-      [[0, 1, 1], [1, 1, 0]],
-      [[1, 1, 1], [0, 1, 0]],
-      [[1, 0, 0], [1, 1, 1]],
+  // Piese simple: 1–4 celule, ușor de plasat
+  private simpleShapes(): number[][][] {
+    return [
       [[1]],
       [[1, 1]],
       [[1], [1]],
       [[1, 1], [1, 0]],
       [[1, 1, 1]],
+      [[1], [1], [1]],
+      [[1, 1], [1, 1]],
+      [[1, 1, 0], [0, 1, 1]],
+      [[0, 1, 1], [1, 1, 0]],
+      [[1, 1, 1, 1]],
+      [[1], [1], [1], [1]],
+    ];
+  }
+
+  // Piese complexe: 5+ celule, forme dificile
+  private complexShapes(): number[][][] {
+    return [
       [[1, 1, 1], [1, 1, 1], [1, 1, 1]],
       [[0, 1, 0], [1, 1, 1], [0, 1, 0]],
       [[1, 0, 1], [1, 1, 1]],
@@ -41,9 +46,19 @@ export class Piece {
       [[1, 1, 1], [1, 0, 0], [1, 0, 0]],
       [[1, 1, 1], [0, 0, 1], [0, 0, 1]],
       [[1, 1, 0], [0, 1, 0], [0, 1, 1]],
-      [[1, 1, 1], [1, 0, 1]]
+      [[1, 1, 1], [1, 0, 1]],
+      [[1, 1, 1], [0, 1, 0]],
+      [[1, 0, 0], [1, 1, 1]],
     ];
-    return models[Math.floor(Math.random() * models.length)];
+  }
+
+  private generateRandomShape(complexityWeight: number): number[][] {
+    const simple = this.simpleShapes();
+    const complex = this.complexShapes();
+    if (Math.random() < complexityWeight) {
+      return complex[Math.floor(Math.random() * complex.length)];
+    }
+    return simple[Math.floor(Math.random() * simple.length)];
   }
 
   private injectTitan() {
@@ -71,7 +86,6 @@ export class Piece {
     ctx.closePath();
   }
 
-  // draw() nu modifică this.x / this.y — poziția e gestionată doar din main.ts
   draw(ctx: CanvasRenderingContext2D, cellSize: number, offsetX: number, offsetY: number) {
     if (!this.shape || this.shape.length === 0) return;
 

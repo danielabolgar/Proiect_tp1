@@ -3,44 +3,9 @@ export class Grid {
   cells: number[][];
   cellSize: number;
 
-  // Snapshot pentru Undo
-  private savedCells: number[][] | null = null;
-
   constructor(cellSize: number = 40) {
     this.cellSize = cellSize;
     this.cells = Array.from({ length: 10 }, () => Array(10).fill(0));
-  }
-
-  saveState() {
-    this.savedCells = this.cells.map(row => [...row]);
-  }
-
-  restoreState(): boolean {
-    if (!this.savedCells) return false;
-    this.cells = this.savedCells.map(row => [...row]);
-    this.savedCells = null;
-    return true;
-  }
-
-  hasSavedState(): boolean {
-    return this.savedCells !== null;
-  }
-
-  applyBomb(gridX: number, gridY: number): { destroyedCells: any[] } {
-    const destroyedCells: any[] = [];
-    for (let r = gridY - 1; r <= gridY + 1; r++) {
-      for (let c = gridX - 1; c <= gridX + 1; c++) {
-        if (r >= 0 && r < this.size && c >= 0 && c < this.size && this.cells[r][c] !== 0) {
-          destroyedCells.push({
-            x: c * this.cellSize,
-            y: r * this.cellSize,
-            color: this.cells[r][c] === -1 ? "#ff00ff" : "#ff4444"
-          });
-          this.cells[r][c] = 0;
-        }
-      }
-    }
-    return { destroyedCells };
   }
 
   draw(ctx: CanvasRenderingContext2D) {
@@ -224,6 +189,23 @@ export class Grid {
 
   reset() {
     this.cells = Array.from({ length: 10 }, () => Array(10).fill(0));
-    this.savedCells = null;
+  }
+
+  // Pre-umple N celule random în jumătatea de jos (rândurile 5–9),
+  // garantând că nu blochează complet nicio coloană
+  preFill(count: number) {
+    let placed = 0;
+    let tries = 0;
+    while (placed < count && tries < 500) {
+      tries++;
+      const r = 5 + Math.floor(Math.random() * 5); // doar jumătatea de jos
+      const c = Math.floor(Math.random() * this.size);
+      if (this.cells[r][c] !== 0) continue;
+      // Verifică să nu umplem complet o coloană
+      const colFilled = this.cells.filter(row => row[c] !== 0).length;
+      if (colFilled >= this.size - 2) continue;
+      this.cells[r][c] = 1;
+      placed++;
+    }
   }
 }

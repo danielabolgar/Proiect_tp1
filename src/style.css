@@ -36,7 +36,7 @@ body {
   width: 432px;
 }
 
-/* ── OVERLAY BASE ── */
+
 .overlay {
   position: absolute;
   inset: 0;
@@ -69,7 +69,6 @@ h1 {
   text-shadow: 0 0 5px rgba(255,0,255,0.5);
 }
 
-/* ── BUTOANE ── */
 button {
   background: transparent;
   color: var(--neon-cyan);
@@ -96,7 +95,6 @@ button:disabled {
   transform: none;
 }
 
-/* ── MODE SELECT ── */
 .mode-cards {
   display: flex;
   gap: 16px;
@@ -121,7 +119,6 @@ button:disabled {
 .mode-title { color: var(--neon-cyan); font-size: 0.9rem; letter-spacing: 2px; font-weight: 700; margin-bottom: 6px; }
 .mode-desc { color: rgba(224,230,237,0.6); font-size: 0.65rem; line-height: 1.5; letter-spacing: 0.5px; }
 
-/* ── HUD ── */
 #screen-hud {
   padding-bottom: 8px;
 }
@@ -138,7 +135,6 @@ button:disabled {
 }
 .hud-top span span { color: #fff; text-shadow: 0 0 5px #fff; }
 
-/* ── TIMER ── */
 #timer-wrap {
   display: flex;
   align-items: center;
@@ -166,32 +162,6 @@ button:disabled {
   text-align: right;
 }
 
-/* ── POWER-UPS ── */
-.powerup-row {
-  display: flex;
-  gap: 8px;
-  margin-bottom: 8px;
-}
-.pu-btn {
-  flex: 1;
-  padding: 6px 10px;
-  font-size: 0.65rem;
-  letter-spacing: 1px;
-  border-width: 1px;
-  margin-top: 0;
-}
-.pu-btn.pu-active {
-  background: rgba(255,50,50,0.2);
-  border-color: #ff3333;
-  color: #ff3333;
-  box-shadow: 0 0 12px rgba(255,50,50,0.4);
-}
-.pu-cost {
-  opacity: 0.6;
-  font-size: 0.6rem;
-}
-
-/* ── CANVAS WRAPPER ── */
 .canvas-wrapper {
   display: inline-block;
   padding: 3px;
@@ -207,7 +177,7 @@ canvas {
   touch-action: none;
 }
 
-/* ── GLITCH ANIMATION ── */
+
 @keyframes pulse {
   0% { opacity: 1; }
   50% { opacity: 0.65; }
@@ -215,7 +185,7 @@ canvas {
 }
 .glitch { animation: pulse 2s infinite ease-in-out; }
 
-/* ── SCANLINES ── */
+
 .game-container::after {
   content: "";
   position: absolute;
@@ -227,7 +197,6 @@ canvas {
   border-radius: 16px;
 }
 
-/* ── YOU WIN special ── */
 #screen-win h1 {
   color: var(--neon-gold) !important;
   text-shadow: 0 0 20px var(--neon-gold), 0 0 40px rgba(255,215,0,0.4) !important;
