@@ -1,3 +1,4 @@
+
 import './style.css'
 import { Grid } from './Grid'
 import { Piece } from './Piece'
@@ -31,8 +32,6 @@ let moveTimeLeft = 0;          // secunde rămase
 let moveTimerInterval: number | null = null;
 let timerWarning = false;      // flash roșu când < 5s
 
-
-
 // Particule
 interface Particle { x: number; y: number; vx: number; vy: number; life: number; color: string; size?: number; }
 let particles: Particle[] = [];
@@ -53,7 +52,7 @@ let ghostGridY: number | null = null;
 let snapValid = false;
 
 // Grid & canvas
-const grid = new Grid(40);
+const grid = new Grid(40); // Dimensiunea celulei din Grid.ts
 let canvas: HTMLCanvasElement;
 let ctx: CanvasRenderingContext2D;
 
@@ -61,14 +60,12 @@ let ctx: CanvasRenderingContext2D;
 app.innerHTML = `
 <div class="game-container">
 
-  <!-- MENIU PRINCIPAL -->
   <div id="screen-menu" class="overlay">
     <h1 class="glitch">ZenBlocks</h1>
     <p class="hs-text">HIGH SCORE: <span id="menuHS">${highScore}</span></p>
     <button id="btn-play">INITIALIZE SYSTEM</button>
   </div>
 
-  <!-- SELECȚIE MOD -->
   <div id="screen-mode" class="overlay" style="display:none">
     <h1 class="glitch">SELECT MODE</h1>
     <div class="mode-cards">
@@ -85,29 +82,24 @@ app.innerHTML = `
     </div>
   </div>
 
-  <!-- HUD JOC -->
   <div id="screen-hud" style="display:none">
     <div class="hud-top">
       <span class="hud-label">SCOR <span id="hud-scor">0</span></span>
       <span class="hud-label" id="hud-nivel-wrap">NIVEL <span id="hud-nivel">1</span></span>
       <span class="hud-label" id="hud-target-wrap">TARGET <span id="hud-target">500</span></span>
     </div>
-    <!-- Timer bar -->
     <div id="timer-wrap" style="display:none">
       <div id="timer-bar-bg">
         <div id="timer-bar"></div>
       </div>
       <span id="timer-text">30s</span>
     </div>
-
   </div>
 
-  <!-- CANVAS -->
   <div class="canvas-wrapper" id="canvas-wrap" style="display:none">
     <canvas id="gameCanvas" width="400" height="530"></canvas>
   </div>
 
-  <!-- NIVEL COMPLET -->
   <div id="screen-level" class="overlay" style="display:none">
     <h1 style="color:#00ffff">LEVEL COMPLETE</h1>
     <p id="lc-text" class="hs-text"></p>
@@ -115,7 +107,6 @@ app.innerHTML = `
     <button id="btn-next">NEXT LEVEL ▶</button>
   </div>
 
-  <!-- YOU WIN -->
   <div id="screen-win" class="overlay" style="display:none">
     <h1 class="glitch" style="color:#ffd700;text-shadow:0 0 20px #ffd700">YOU WIN</h1>
     <p class="hs-text" style="color:#ffd700">Ai completat toate cele 10 nivele!</p>
@@ -124,7 +115,6 @@ app.innerHTML = `
     <button id="btn-win-restart">PLAY AGAIN</button>
   </div>
 
-  <!-- GAME OVER -->
   <div id="screen-over" class="overlay" style="display:none">
     <h1 class="glitch" style="color:#ff00ff">GAME OVER</h1>
     <p id="over-reason" class="hs-text"></p>
@@ -154,9 +144,17 @@ function showOnly(id: string) {
 // ─── PARTICULE ────────────────────────────────────────────────────────────────
 function createExplosion(x: number, y: number, color: string, count = 12) {
   for (let i = 0; i < count; i++) {
-    particles.push({ x: x + 20, y: y + 20, vx: (Math.random() - 0.5) * 14, vy: (Math.random() - 0.5) * 14, life: 1.0, color });
+    particles.push({ 
+      x: x + 20, 
+      y: y + 20, 
+      vx: (Math.random() - 0.5) * 14, 
+      vy: (Math.random() - 0.5) * 14, 
+      life: 1.0, 
+      color 
+    });
   }
 }
+
 function updateParticles() {
   for (let i = particles.length - 1; i >= 0; i--) {
     const p = particles[i];
@@ -164,6 +162,7 @@ function updateParticles() {
     if (p.life <= 0) particles.splice(i, 1);
   }
 }
+
 function drawParticles() {
   particles.forEach(p => {
     ctx.globalAlpha = p.life;
@@ -218,6 +217,7 @@ function stopMoveTimer() {
   if (moveTimerInterval !== null) { clearInterval(moveTimerInterval); moveTimerInterval = null; }
 }
 
+// ─── UI HUD ───────────────────────────────────────────────────────────────────
 function updateTimerUI() {
   const limit = getTimeLimit();
   const pct = limit > 0 ? (moveTimeLeft / limit) * 100 : 100;
@@ -229,7 +229,6 @@ function updateTimerUI() {
   txt.style.color = timerWarning ? '#ff3333' : '#00ffff';
 }
 
-// ─── UI HUD ───────────────────────────────────────────────────────────────────
 function updateHUD() {
   document.getElementById('hud-scor')!.innerText = scor.toString();
   if (gameMode === 'campaign') {
@@ -301,17 +300,16 @@ function drawLevelTransition() {
 
   ctx.save();
   ctx.globalAlpha = levelTransition.alpha;
-  // Fundal semi-transparent
   ctx.fillStyle = 'rgba(0,0,0,0.55)';
   ctx.fillRect(0, canvas.height / 2 - 50, canvas.width, 100);
-  // Text titlu
+  
   ctx.font = 'bold 26px Orbitron, sans-serif';
   ctx.textAlign = 'center';
   ctx.shadowBlur = 30;
   ctx.shadowColor = '#00ffff';
   ctx.fillStyle = '#00ffff';
   ctx.fillText(levelTransition.title, canvas.width / 2, canvas.height / 2 - 8);
-  // Sub-titlu nivel
+  
   ctx.font = '11px Orbitron, sans-serif';
   ctx.fillStyle = 'rgba(224,230,237,0.8)';
   ctx.shadowBlur = 0;
@@ -334,17 +332,18 @@ function triggerYouWin() {
 function handleMoveLogic() {
   mutariEfectuate++;
   const result = grid.clearLines();
-  if (result.destroyedCells.length > 0)
+  if (result.destroyedCells.length > 0) {
     result.destroyedCells.forEach(cell => createExplosion(cell.x, cell.y, cell.color));
+  }
 
   scor += result.points;
   scor += grid.checkGeometryBonus();
 
-  // Gravity la fiecare 4 mutări în endless, la fiecare 3 în campaign lvl 5+
+  // Aplică gravitația conform structurii nivelelor
   const pragGrav = (gameMode === 'campaign' && campaignLevel >= 4) ? 3 : 4;
   if (mutariEfectuate % pragGrav === 0) grid.applyGravity();
 
-  // Campaign: verifică dacă s-a atins targetul
+  // Campaign: Verifică dacă s-a atins targetul
   if (gameMode === 'campaign') {
     const lvl = CAMPAIGN_LEVELS[campaignLevel];
     if (scor >= lvl.targetScore) {
@@ -358,7 +357,7 @@ function handleMoveLogic() {
     }
   }
 
-  // Verifică game over (nu mai poți plasa)
+  // Verifică game over local
   if (!grid.poate_plasa_orice(pieseDisponibile)) {
     triggerGameOver('Nu mai există mutări posibile.');
     return;
@@ -376,7 +375,6 @@ canvas.addEventListener('pointerdown', (e: PointerEvent) => {
   const mouseX = e.clientX - rect.left;
   const mouseY = e.clientY - rect.top;
 
-  // Selectare piesă
   const CELL_PREV = 28; 
   pieseDisponibile.forEach(piece => {
     const pw = piece.shape[0].length * CELL_PREV;
@@ -410,6 +408,7 @@ window.addEventListener('pointermove', (e: PointerEvent) => {
   const ph = piesaSelectata.shape.length;
   const cX = piesaSelectata.x + (pw * grid.cellSize) / 2;
   const cY = piesaSelectata.y + (ph * grid.cellSize) / 2;
+  
   ghostGridX = Math.round((cX - (pw * grid.cellSize) / 2) / grid.cellSize);
   ghostGridY = Math.round((cY - (ph * grid.cellSize) / 2) / grid.cellSize);
   snapValid = grid.verifica_validitate(piesaSelectata.shape, ghostGridX, ghostGridY);
@@ -432,7 +431,6 @@ window.addEventListener('pointerup', () => {
     piesaInMana = false;
     handleMoveLogic();
   } else {
-    // Întoarcere instanta pe poziția inițială
     piesaSelectata = null;
     piesaInMana = false;
   }
@@ -499,7 +497,6 @@ function startGame(mode: GameMode) {
   showOnly('screen-hud');
   updateHUD();
   startMoveTimer();
-  // Afișează titlul primului nivel
   if (mode === 'campaign') showLevelTitle(CAMPAIGN_LEVELS[0].title);
 }
 
@@ -533,7 +530,6 @@ function gameLoop() {
   ctx.fillStyle = '#020204';
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-  // Particule gold pentru YOU WIN (nivel 10)
   if (winParticlesActive) {
     spawnWinParticles();
     particles.forEach(p => {
@@ -599,7 +595,6 @@ function gameLoop() {
     ctx.stroke();
     ctx.setLineDash([]);
 
-    // Titlu nivel — apare la tranziție, dispare după ~2s
     drawLevelTransition();
   }
 
