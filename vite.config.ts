@@ -1,5 +1,5 @@
 import { defineConfig } from 'vite'
 
 export default defineConfig({
-  base: '/zenblocksgame/',
+  base: '/Proiect_tp1/',
 })

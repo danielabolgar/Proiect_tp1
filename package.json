@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
-  "homepage": "https://USERNAME.github.io/zenblocksgame",
+  "homepage": "https://danielabolgar.github.io/Proiect_tp1",
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
