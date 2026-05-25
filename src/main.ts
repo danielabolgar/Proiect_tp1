@@ -1,4 +1,3 @@
-
 import './style.css'
 import { Grid } from './Grid'
 import { Piece } from './Piece'
@@ -8,17 +7,29 @@ const app = document.querySelector<HTMLDivElement>('#app')!;
 
 // ─── TIPURI ───────────────────────────────────────────────────────────────────
 type GameMode = 'campaign' | 'endless';
-type GameScreen = 'menu' | 'mode_select' | 'playing' | 'level_complete' | 'you_win' | 'game_over';
+type GameScreen = 'menu' | 'mode_select' | 'tutorial' | 'playing' | 'level_complete' | 'you_win' | 'game_over';
 
 // ─── STATE ────────────────────────────────────────────────────────────────────
 let gameMode: GameMode = 'endless';
 let screen: GameScreen = 'menu';
 
-// Scor & progres
 let scor = 0;
-let campaignLevel = 0;       
+let campaignLevel = 0;
 let mutariEfectuate = 0;
-let highScore = Number(localStorage.getItem('zenblocks_hs')) || 0;
+
+// High score separat per mod
+let highScoreCampaign = Number(localStorage.getItem('zenblocks_hs_campaign')) || 0;
+let highScoreEndless   = Number(localStorage.getItem('zenblocks_hs_endless'))  || 0;
+function getHS(): number {
+  return gameMode === 'campaign' ? highScoreCampaign : highScoreEndless;
+}
+function saveHS() {
+  if (scor <= getHS()) return;
+  if (gameMode === 'campaign') { highScoreCampaign = scor; localStorage.setItem('zenblocks_hs_campaign', scor.toString()); }
+  else                         { highScoreEndless = scor;  localStorage.setItem('zenblocks_hs_endless',  scor.toString()); }
+  document.getElementById('menuHS')!.innerText = getBestHS().toString();
+}
+function getBestHS(): number { return Math.max(highScoreCampaign, highScoreEndless); }
 
 // Piese
 let pieseDisponibile: Piece[] = [];
@@ -27,34 +38,65 @@ let piesaInMana = false;
 let offsetX = 0;
 let offsetY = 0;
 
-// Cronometru per mutare
-let moveTimeLeft = 0;          // secunde rămase
+// Timer
+let moveTimeLeft = 0;
 let moveTimerInterval: number | null = null;
-let timerWarning = false;      // flash roșu când < 5s
+let timerWarning = false;
 
 // Particule
 interface Particle { x: number; y: number; vx: number; vy: number; life: number; color: string; size?: number; }
 let particles: Particle[] = [];
 
-// Tranziție nivel — titlu flash
+// Tranziție nivel
 let levelTransition: { title: string; alpha: number; timer: number } | null = null;
-
-// Animație finală nivel 10
 let winParticlesActive = false;
 
-// Mouse / touch position
+// Combo flash
+let comboFlash: { text: string; alpha: number; timer: number; color: string } | null = null;
+
+// Mouse / touch
 let mouseCanvasX = 0;
 let mouseCanvasY = 0;
-
-// Ghost snap
 let ghostGridX: number | null = null;
 let ghostGridY: number | null = null;
 let snapValid = false;
 
-// Grid & canvas
-const grid = new Grid(40); // Dimensiunea celulei din Grid.ts
+const grid = new Grid(40);
 let canvas: HTMLCanvasElement;
 let ctx: CanvasRenderingContext2D;
+
+// ─── SUNET ────────────────────────────────────────────────────────────────────
+let audioCtx: AudioContext | null = null;
+function getAudio(): AudioContext {
+  if (!audioCtx) audioCtx = new AudioContext();
+  return audioCtx;
+}
+
+function playTone(freq: number, type: OscillatorType, duration: number, vol = 0.18, attack = 0.01) {
+  try {
+    const ac = getAudio();
+    const osc = ac.createOscillator();
+    const gain = ac.createGain();
+    osc.connect(gain); gain.connect(ac.destination);
+    osc.type = type;
+    osc.frequency.setValueAtTime(freq, ac.currentTime);
+    gain.gain.setValueAtTime(0, ac.currentTime);
+    gain.gain.linearRampToValueAtTime(vol, ac.currentTime + attack);
+    gain.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + duration);
+    osc.start(ac.currentTime);
+    osc.stop(ac.currentTime + duration);
+  } catch {}
+}
+
+const sounds = {
+  place:    () => gameMode === 'endless'
+    ? playTone(440 * Math.pow(2, [0,2,4,7,9][Math.floor(Math.random()*5)]/12), 'sine', 0.4, 0.1, 0.02)
+    : playTone(320, 'sine', 0.12, 0.14),
+  clear:    () => { playTone(520, 'sine', 0.25, 0.22); playTone(780, 'sine', 0.25, 0.16, 0.05); },
+  combo:    () => { playTone(660, 'sine', 0.35, 0.25); playTone(990, 'triangle', 0.35, 0.18, 0.08); playTone(1320, 'sine', 0.4, 0.14, 0.15); },
+  gameOver: () => { playTone(220, 'sawtooth', 0.6, 0.3); playTone(110, 'sawtooth', 0.8, 0.25, 0.1); },
+  levelUp:  () => { playTone(440, 'sine', 0.2, 0.2); playTone(660, 'sine', 0.25, 0.18, 0.1); playTone(880, 'sine', 0.35, 0.15, 0.2); },
+};
 
 // ─── HTML ─────────────────────────────────────────────────────────────────────
 app.innerHTML = `
@@ -62,8 +104,22 @@ app.innerHTML = `
 
   <div id="screen-menu" class="overlay">
     <h1 class="glitch">ZenBlocks</h1>
-    <p class="hs-text">HIGH SCORE: <span id="menuHS">${highScore}</span></p>
+    <p class="hs-text">BEST SCORE: <span id="menuHS">${getBestHS()}</span></p>
     <button id="btn-play">INITIALIZE SYSTEM</button>
+    <button id="btn-tutorial" style="font-size:0.7rem;padding:8px 20px;margin-top:4px;opacity:0.7">? CUM SE JOACĂ</button>
+  </div>
+
+  <div id="screen-tutorial" class="overlay" style="display:none">
+    <h1 style="font-size:1.2rem;letter-spacing:3px">CUM SE JOACĂ</h1>
+    <div class="tutorial-grid">
+      <div class="tut-item"><span class="tut-icon">🧩</span><div><b>Trage piesele</b> pe tablă. Completează rânduri sau coloane întregi pentru a câștiga puncte.</div></div>
+      <div class="tut-item"><span class="tut-icon">💥</span><div><b>Combo</b> — completezi 2+ linii deodată? Punctele se dublează și primești un bonus.</div></div>
+      <div class="tut-item"><span class="tut-icon">🔮</span><div><b>Titan</b> — celulele violet (⊙) sunt speciale: nu dispar la prima curățare, ci devin normale. +50 pts bonus.</div></div>
+      <div class="tut-item"><span class="tut-icon">⬛</span><div><b>Geometry Bonus</b> — formezi un pătrat 3×3 complet pe tablă? +500 pts instant.</div></div>
+      <div class="tut-item"><span class="tut-icon">🌊</span><div><b>Gravitație</b> — din nivel 5, la fiecare 3 mutări piesele de pe tablă cad în jos.</div></div>
+      <div class="tut-item"><span class="tut-icon">⏱</span><div><b>Timer</b> — în Campaign ai X secunde per mutare. Dacă expiră, jocul se termină.</div></div>
+    </div>
+    <button id="btn-tutorial-back">ÎNAPOI</button>
   </div>
 
   <div id="screen-mode" class="overlay" style="display:none">
@@ -77,7 +133,7 @@ app.innerHTML = `
       <div class="mode-card" id="btn-endless">
         <div class="mode-icon">∞</div>
         <div class="mode-title">ENDLESS</div>
-        <div class="mode-desc">Scor cât mai mare<br>Fără limită de timp</div>
+        <div class="mode-desc">Fără timer, fără game over<br>Joacă cât vrei • Scor la infinit</div>
       </div>
     </div>
   </div>
@@ -87,11 +143,10 @@ app.innerHTML = `
       <span class="hud-label">SCOR <span id="hud-scor">0</span></span>
       <span class="hud-label" id="hud-nivel-wrap">NIVEL <span id="hud-nivel">1</span></span>
       <span class="hud-label" id="hud-target-wrap">TARGET <span id="hud-target">500</span></span>
+      <span class="hud-label" id="hud-hs-wrap">BEST <span id="hud-hs">0</span></span>
     </div>
     <div id="timer-wrap" style="display:none">
-      <div id="timer-bar-bg">
-        <div id="timer-bar"></div>
-      </div>
+      <div id="timer-bar-bg"><div id="timer-bar"></div></div>
       <span id="timer-text">30s</span>
     </div>
   </div>
@@ -104,6 +159,7 @@ app.innerHTML = `
     <h1 style="color:#00ffff">LEVEL COMPLETE</h1>
     <p id="lc-text" class="hs-text"></p>
     <p id="lc-score" class="hs-text"></p>
+    <p id="lc-hs" class="hs-text"></p>
     <button id="btn-next">NEXT LEVEL ▶</button>
   </div>
 
@@ -117,9 +173,10 @@ app.innerHTML = `
 
   <div id="screen-over" class="overlay" style="display:none">
     <h1 class="glitch" style="color:#ff00ff">GAME OVER</h1>
-    <p id="over-reason" class="hs-text"></p>
+    <p id="over-reason" class="hs-text" style="font-size:0.75rem;max-width:280px;text-align:center;line-height:1.6"></p>
     <p id="over-score" class="hs-text"></p>
     <p id="over-hs" class="hs-text"></p>
+    <p id="over-new-hs" class="hs-text" style="color:#ffd700;display:none">🏆 NOU HIGH SCORE!</p>
     <button id="btn-over-restart">REBOOT SYSTEM</button>
   </div>
 
@@ -132,7 +189,7 @@ ctx = canvas.getContext('2d')!;
 
 // ─── HELPERS OVERLAY ──────────────────────────────────────────────────────────
 function showOnly(id: string) {
-  ['screen-menu','screen-mode','screen-hud','screen-level','screen-win','screen-over']
+  ['screen-menu','screen-mode','screen-tutorial','screen-hud','screen-level','screen-win','screen-over']
     .forEach(s => {
       const el = document.getElementById(s)!;
       el.style.display = s === id ? (s === 'screen-hud' ? 'block' : 'flex') : 'none';
@@ -181,7 +238,7 @@ function makePiece(): Piece {
     const titanChance = campaignLevel >= 2 ? 0.3 : 0.2;
     return new Piece(titanChance, lvl.complexityWeight);
   }
-  return new Piece(0.2, 0.15);
+  return new Piece(0.15, 0.15); // endless: mai relaxat, titan rar
 }
 
 // ─── TIMER ────────────────────────────────────────────────────────────────────
@@ -231,43 +288,53 @@ function updateTimerUI() {
 
 function updateHUD() {
   document.getElementById('hud-scor')!.innerText = scor.toString();
+  document.getElementById('hud-hs')!.innerText = getHS().toString();
   if (gameMode === 'campaign') {
     const lvl = CAMPAIGN_LEVELS[campaignLevel];
     document.getElementById('hud-nivel')!.innerText = (campaignLevel + 1).toString();
     document.getElementById('hud-target')!.innerText = lvl.targetScore.toString();
     document.getElementById('hud-nivel-wrap')!.style.display = '';
     document.getElementById('hud-target-wrap')!.style.display = '';
+    document.getElementById('hud-hs-wrap')!.style.display = '';
   } else {
     document.getElementById('hud-nivel-wrap')!.style.display = 'none';
     document.getElementById('hud-target-wrap')!.style.display = 'none';
+    document.getElementById('hud-hs-wrap')!.style.display = '';
   }
 }
 
 // ─── GAME OVER / WIN ──────────────────────────────────────────────────────────
-function checkAndSaveHS() {
-  if (scor > highScore) {
-    highScore = scor;
-    localStorage.setItem('zenblocks_hs', highScore.toString());
-    document.getElementById('menuHS')!.innerText = highScore.toString();
-  }
-}
-
 function triggerGameOver(reason: string) {
   stopMoveTimer();
-  checkAndSaveHS();
+  const wasHS = scor > getHS();
+  saveHS();
   screen = 'game_over';
-  document.getElementById('over-reason')!.innerText = reason;
+
+  // Explică clar motivul
+  const reasonEl = document.getElementById('over-reason')!;
+  if (reason.includes('timp')) {
+    reasonEl.innerHTML = '⏱ Timpul a expirat.<br>Data viitoare mișcă-te mai repede!';
+  } else {
+    reasonEl.innerHTML = '🧩 Nu mai există loc pentru nicio piesă.<br>Tabla s-a blocat complet.';
+  }
   document.getElementById('over-score')!.innerText = 'SCOR FINAL: ' + scor;
-  document.getElementById('over-hs')!.innerText = 'HIGH SCORE: ' + highScore;
+  document.getElementById('over-hs')!.innerText = 'BEST ' + gameMode.toUpperCase() + ': ' + getHS();
+  const newHsEl = document.getElementById('over-new-hs')!;
+  newHsEl.style.display = wasHS ? 'block' : 'none';
+
+  sounds.gameOver();
   showOnly('screen-over');
 }
 
 function triggerLevelComplete() {
   stopMoveTimer();
+  saveHS();
   screen = 'level_complete';
   const lvl = CAMPAIGN_LEVELS[campaignLevel];
   document.getElementById('lc-text')!.innerText = `Nivel ${campaignLevel + 1} completat! Obiectiv: ${lvl.targetScore} pts`;
   document.getElementById('lc-score')!.innerText = `Scorul tău: ${scor} pts`;
+  document.getElementById('lc-hs')!.innerText = `Best Campaign: ${highScoreCampaign} pts`;
+  sounds.levelUp();
   showOnly('screen-level');
 }
 
@@ -320,11 +387,11 @@ function drawLevelTransition() {
 
 function triggerYouWin() {
   stopMoveTimer();
-  checkAndSaveHS();
+  saveHS();
   screen = 'you_win';
   winParticlesActive = true;
   document.getElementById('win-score')!.innerText = 'SCOR FINAL: ' + scor;
-  document.getElementById('win-hs')!.innerText = 'HIGH SCORE: ' + highScore;
+  document.getElementById('win-hs')!.innerText = 'BEST CAMPAIGN: ' + highScoreCampaign;
   showOnly('screen-win');
 }
 
@@ -334,37 +401,57 @@ function handleMoveLogic() {
   const result = grid.clearLines();
   if (result.destroyedCells.length > 0) {
     result.destroyedCells.forEach(cell => createExplosion(cell.x, cell.y, cell.color));
+    if (result.totalCleared >= 3) {
+      sounds.combo();
+      comboFlash = { text: `${result.totalCleared}× COMBO! +${result.points}`, alpha: 1.0, timer: 90, color: '#ffd700' };
+    } else if (result.totalCleared >= 2) {
+      sounds.combo();
+      comboFlash = { text: `DOUBLE CLEAR! +${result.points}`, alpha: 1.0, timer: 75, color: '#00ffff' };
+    } else {
+      sounds.clear();
+    }
+  } else {
+    sounds.place();
   }
 
   scor += result.points;
-  scor += grid.checkGeometryBonus();
+  const geom = grid.checkGeometryBonus();
+  if (geom > 0) {
+    scor += geom;
+    comboFlash = { text: `⬛ GEOMETRY BONUS! +${geom}`, alpha: 1.0, timer: 90, color: '#ff00ff' };
+  }
 
-  // Aplică gravitația conform structurii nivelelor
   const pragGrav = (gameMode === 'campaign' && campaignLevel >= 4) ? 3 : 4;
   if (mutariEfectuate % pragGrav === 0) grid.applyGravity();
 
-  // Campaign: Verifică dacă s-a atins targetul
   if (gameMode === 'campaign') {
     const lvl = CAMPAIGN_LEVELS[campaignLevel];
     if (scor >= lvl.targetScore) {
       if (campaignLevel >= CAMPAIGN_LEVELS.length - 1) {
-        triggerYouWin();
-        return;
+        triggerYouWin(); return;
       } else {
-        triggerLevelComplete();
-        return;
+        triggerLevelComplete(); return;
       }
     }
   }
 
-  // Verifică game over local
+  // Endless: niciodată game over — dacă e blocat, șterge rândul de jos
+  if (gameMode === 'endless') {
+    if (!grid.poate_plasa_orice(pieseDisponibile)) {
+      for (let c = 0; c < grid.size; c++) grid.cells[grid.size - 1][c] = 0;
+      comboFlash = { text: '∞ RESET — continuă!', alpha: 1.0, timer: 60, color: '#4CAF50' };
+    }
+    updateHUD();
+    return;
+  }
+
   if (!grid.poate_plasa_orice(pieseDisponibile)) {
     triggerGameOver('Nu mai există mutări posibile.');
     return;
   }
 
   updateHUD();
-  startMoveTimer(); 
+  startMoveTimer();
 }
 
 // ─── INTERACȚIUNE ─────────────────────────────────────────────────────────────
@@ -420,7 +507,7 @@ window.addEventListener('pointerup', () => {
   if (ghostGridX !== null && ghostGridY !== null &&
       grid.verifica_validitate(piesaSelectata.shape, ghostGridX, ghostGridY)) {
     grid.plaseaza_piesa(piesaSelectata.shape, ghostGridX, ghostGridY);
-    
+    sounds.place();
     const index = pieseDisponibile.indexOf(piesaSelectata);
     if (index !== -1) {
       pieseDisponibile[index] = makePiece();
@@ -445,13 +532,11 @@ document.getElementById('btn-play')!.addEventListener('click', () => {
   showOnly('screen-mode');
 });
 
-document.getElementById('btn-campaign')!.addEventListener('click', () => {
-  startGame('campaign');
-});
+document.getElementById('btn-tutorial')!.addEventListener('click', () => showOnly('screen-tutorial'));
+document.getElementById('btn-tutorial-back')!.addEventListener('click', () => showOnly('screen-menu'));
 
-document.getElementById('btn-endless')!.addEventListener('click', () => {
-  startGame('endless');
-});
+document.getElementById('btn-campaign')!.addEventListener('click', () => startGame('campaign'));
+document.getElementById('btn-endless')!.addEventListener('click',  () => startGame('endless'));
 
 document.getElementById('btn-next')!.addEventListener('click', () => {
   if (campaignLevel >= CAMPAIGN_LEVELS.length - 1) {
@@ -487,6 +572,7 @@ function startGame(mode: GameMode) {
   particles = [];
   winParticlesActive = false;
   levelTransition = null;
+  comboFlash = null;
   grid.reset();
   if (mode === 'campaign') {
     const lvl = CAMPAIGN_LEVELS[0];
@@ -526,6 +612,26 @@ function drawGhostPreview() {
   }
 }
 
+function drawComboFlash() {
+  if (!comboFlash) return;
+  comboFlash.timer--;
+  if (comboFlash.timer <= 20) comboFlash.alpha = comboFlash.timer / 20;
+  if (comboFlash.timer <= 0) { comboFlash = null; return; }
+
+  const progress = 1 - comboFlash.timer / 90;
+  const y = 200 - progress * 40; // se ridică ușor
+
+  ctx.save();
+  ctx.globalAlpha = comboFlash.alpha;
+  ctx.font = 'bold 22px Orbitron, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.shadowBlur = 25;
+  ctx.shadowColor = comboFlash.color;
+  ctx.fillStyle = comboFlash.color;
+  ctx.fillText(comboFlash.text, canvas.width / 2, y);
+  ctx.restore();
+}
+
 function gameLoop() {
   ctx.fillStyle = '#020204';
   ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -534,18 +640,14 @@ function gameLoop() {
     spawnWinParticles();
     particles.forEach(p => {
       ctx.globalAlpha = p.life * 0.85;
-      ctx.shadowBlur = 10;
-      ctx.shadowColor = p.color;
+      ctx.shadowBlur = 10; ctx.shadowColor = p.color;
       ctx.fillStyle = p.color;
       const sz = (p as any).size || 3;
       ctx.fillRect(p.x, p.y, sz, sz);
-      p.x += p.vx;
-      p.y += p.vy;
-      p.life -= 0.008;
+      p.x += p.vx; p.y += p.vy; p.life -= 0.008;
     });
     particles = particles.filter(p => p.life > 0);
-    ctx.globalAlpha = 1;
-    ctx.shadowBlur = 0;
+    ctx.globalAlpha = 1; ctx.shadowBlur = 0;
     requestAnimationFrame(gameLoop);
     return;
   }
@@ -555,7 +657,6 @@ function gameLoop() {
 
   if (screen === 'playing') {
     grid.draw(ctx);
-
     if (piesaInMana) drawGhostPreview();
 
     const timp = Date.now() * 0.003;
@@ -579,22 +680,18 @@ function gameLoop() {
         ctx.font = 'bold 11px Orbitron, sans-serif';
         ctx.textAlign = 'center';
         ctx.fillStyle = snapValid ? '#00ffff' : '#ff3333';
-        ctx.shadowBlur = 8;
-        ctx.shadowColor = snapValid ? '#00ffff' : '#ff3333';
+        ctx.shadowBlur = 8; ctx.shadowColor = snapValid ? '#00ffff' : '#ff3333';
         ctx.fillText(snapValid ? '✓ OK' : '✗', indicatorX, indicatorY);
         ctx.shadowBlur = 0;
       }
     }
 
     ctx.strokeStyle = "rgba(0,255,255,0.15)";
-    ctx.lineWidth = 1;
-    ctx.setLineDash([6, 6]);
-    ctx.beginPath();
-    ctx.moveTo(10, 415);
-    ctx.lineTo(390, 415);
-    ctx.stroke();
+    ctx.lineWidth = 1; ctx.setLineDash([6, 6]);
+    ctx.beginPath(); ctx.moveTo(10, 415); ctx.lineTo(390, 415); ctx.stroke();
     ctx.setLineDash([]);
 
+    drawComboFlash();
     drawLevelTransition();
   }
 

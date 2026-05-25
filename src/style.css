@@ -210,3 +210,27 @@ canvas {
   color: #000;
   box-shadow: 0 0 25px var(--neon-gold);
 }
+
+/* Tutorial */
+.tutorial-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 10px 0;
+  text-align: left;
+  max-width: 340px;
+}
+.tut-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 0.68rem;
+  color: var(--text-main);
+  line-height: 1.5;
+  background: rgba(0,255,255,0.04);
+  border: 1px solid rgba(0,255,255,0.1);
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+.tut-icon { font-size: 1.2rem; flex-shrink: 0; margin-top: 1px; }
+.tut-item b { color: var(--neon-cyan); }
