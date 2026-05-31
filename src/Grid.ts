@@ -103,7 +103,7 @@ export class Grid {
     }
   }
 
-  clearLines(): { points: number; totalCleared: number; destroyedCells: any[] } {
+  clearLines(): { points: number; totalCleared: number; destroyedCells: any[]; clearedCoords: {r:number,c:number}[] } {
     let rowsToClear: number[] = [];
     let colsToClear: number[] = [];
     let destroyedCells: any[] = [];
@@ -124,10 +124,12 @@ export class Grid {
     rowsToClear.forEach(r => { for (let c = 0; c < this.size; c++) cellsToEmpty.add(`${r},${c}`); });
     colsToClear.forEach(c => { for (let r = 0; r < this.size; r++) cellsToEmpty.add(`${r},${c}`); });
 
+    const clearedCoords: {r:number,c:number}[] = [];
     cellsToEmpty.forEach(coord => {
       const [r, c] = coord.split(',').map(Number);
       const val = this.cells[r][c];
       destroyedCells.push({ x: c * this.cellSize, y: r * this.cellSize, color: val === -1 ? "#ff00ff" : "#00ffff" });
+      clearedCoords.push({r, c});
       if (val === -1) { this.cells[r][c] = 1; titanPoints += 50; }
       else this.cells[r][c] = 0;
     });
@@ -135,7 +137,7 @@ export class Grid {
     const totalCleared = rowsToClear.length + colsToClear.length;
     let points = totalCleared * 100;
     if (totalCleared >= 2) points *= 2;
-    return { points: points + titanPoints, totalCleared, destroyedCells };
+    return { points: points + titanPoints, totalCleared, destroyedCells, clearedCoords };
   }
 
   verifica_validitate(shape: number[][], gridX: number, gridY: number): boolean {
@@ -185,6 +187,29 @@ export class Grid {
       }
     }
     return 0;
+  }
+
+  // Desenează animația de dispariție — flash alb pe celulele care se șterg
+  drawClearAnim(ctx: CanvasRenderingContext2D, cells: {r:number,c:number}[], progress: number) {
+    cells.forEach(({r, c}, i) => {
+      const delay = i / cells.length;
+      const localProgress = Math.max(0, (progress - delay * 0.5) * 2);
+      if (localProgress <= 0) return;
+      const alpha = 1 - Math.min(1, localProgress);
+      const scale = 1 + localProgress * 0.3;
+      const x = c * this.cellSize;
+      const y = r * this.cellSize;
+      const cx = x + this.cellSize / 2;
+      const cy = y + this.cellSize / 2;
+      const size = this.cellSize * scale;
+      ctx.save();
+      ctx.globalAlpha = alpha;
+      ctx.shadowBlur = 20;
+      ctx.shadowColor = '#ffffff';
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(cx - size/2 + 2, cy - size/2 + 2, size - 4, size - 4);
+      ctx.restore();
+    });
   }
 
   reset() {

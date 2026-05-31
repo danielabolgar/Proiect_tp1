@@ -1,3 +1,4 @@
+
 @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&display=swap');
 
 :root {
@@ -234,3 +235,56 @@ canvas {
 }
 .tut-icon { font-size: 1.2rem; flex-shrink: 0; margin-top: 1px; }
 .tut-item b { color: var(--neon-cyan); }
+/* Campaign Setup */
+.setup-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+  max-width: 300px;
+  margin: 8px 0;
+}
+.setup-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  text-align: left;
+}
+.setup-field label {
+  font-size: 0.65rem;
+  color: var(--neon-cyan);
+  letter-spacing: 2px;
+}
+.setup-field input {
+  background: rgba(0,255,255,0.05);
+  border: 1px solid rgba(0,255,255,0.3);
+  border-radius: 6px;
+  color: #fff;
+  font-family: 'Orbitron', sans-serif;
+  font-size: 1.1rem;
+  padding: 8px 12px;
+  outline: none;
+  width: 100%;
+  text-align: center;
+  transition: border-color 0.2s;
+}
+.setup-field input:focus {
+  border-color: var(--neon-cyan);
+  box-shadow: 0 0 10px rgba(0,255,255,0.2);
+}
+.setup-preview {
+  background: rgba(0,0,0,0.4);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 8px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.preview-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.62rem;
+  color: rgba(224,230,237,0.7);
+}
+.preview-row span:first-child { color: var(--neon-cyan); }

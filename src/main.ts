@@ -1,7 +1,7 @@
+
 import './style.css'
 import { Grid } from './Grid'
 import { Piece } from './Piece'
-import { CAMPAIGN_LEVELS } from './constants'
 
 const app = document.querySelector<HTMLDivElement>('#app')!;
 
@@ -54,6 +54,27 @@ let winParticlesActive = false;
 // Combo flash
 let comboFlash: { text: string; alpha: number; timer: number; color: string } | null = null;
 
+// Streak
+let streak = 0;
+let streakMultiplier = 1;
+
+// Score popups — cifre care sar pe ecran
+interface ScorePopup { x: number; y: number; text: string; life: number; color: string; vy: number; }
+let scorePopups: ScorePopup[] = [];
+function addScorePopup(x: number, y: number, text: string, color = '#ffffff') {
+  scorePopups.push({ x, y, text, life: 1.0, color, vy: -1.5 });
+}
+
+// Screen shake
+let shakeIntensity = 0;
+let shakeX = 0;
+let shakeY = 0;
+function triggerShake(intensity: number) { shakeIntensity = intensity; }
+
+// Animație dispariție celulă cu celulă
+interface ClearAnim { cells: { r: number; c: number }[]; timer: number; done: boolean; }
+let clearAnim: ClearAnim | null = null;
+
 // Mouse / touch
 let mouseCanvasX = 0;
 let mouseCanvasY = 0;
@@ -65,7 +86,82 @@ const grid = new Grid(40);
 let canvas: HTMLCanvasElement;
 let ctx: CanvasRenderingContext2D;
 
-// ─── SUNET ────────────────────────────────────────────────────────────────────
+// ─── CAMPAIGN CUSTOM ──────────────────────────────────────────────────────────
+interface CustomLevel {
+  levelIndex: number;
+  totalLevels: number;
+  targetScore: number;
+  timePerMove: number;
+  complexityWeight: number;
+  preFillCount: number;
+  title: string;
+  description: string;
+}
+
+let customLevels: CustomLevel[] = [];
+let customTargetScore = 0;
+let customTotalLevels = 0;
+
+function generateCustomLevels(targetScore: number, totalLevels: number): CustomLevel[] {
+  const levels: CustomLevel[] = [];
+  const titles = [
+    'SECTOR ZERO','GRID ONLINE','STATIC NOISE','INTERFERENCE','GRAVITY SHIFT',
+    'PRESSURE WAVE','OVERLOAD','CRITICAL MASS','SYSTEM FAILURE','FINAL PROTOCOL',
+    'DARK MATTER','VOID BREACH','SINGULARITY','EVENT HORIZON','FINAL PROTOCOL Ω'
+  ];
+
+  for (let i = 0; i < totalLevels; i++) {
+    const progress = i / (totalLevels - 1 || 1); // 0 → 1
+
+    // Target: distribuție exponențială — nivelele de la final au ținte mult mai mari
+    const exp = Math.pow(progress, 1.5);
+    const levelTarget = Math.round(targetScore * exp / 50) * 50 || Math.round(targetScore / totalLevels * (i + 1) / 50) * 50;
+
+    // Timer: pornește de la 0 (fără timer) la nivel 1, ajunge la min 6s la final
+    // Primele 20% din nivele nu au timer
+    const timerStart = Math.floor(totalLevels * 0.2);
+    let timePerMove = 0;
+    if (i >= timerStart) {
+      const timerProgress = (i - timerStart) / (totalLevels - timerStart);
+      timePerMove = Math.round(35 - timerProgress * 29); // 35s → 6s
+    }
+
+    // Complexitate piese: 0.1 → 1.0
+    const complexityWeight = Math.min(1.0, 0.1 + progress * 0.9);
+
+    // preFill: 0 → ~25 celule la final, dar doar din jumătatea nivelelor
+    const fillStart = Math.floor(totalLevels * 0.3);
+    const preFillCount = i >= fillStart
+      ? Math.round(((i - fillStart) / (totalLevels - fillStart)) * 25)
+      : 0;
+
+    const titleIndex = Math.min(i, titles.length - 1);
+    const title = titles[titleIndex] || `NIVEL ${i + 1}`;
+
+    let desc = '';
+    if (timePerMove === 0) desc = 'Fără limită de timp';
+    else if (preFillCount === 0) desc = `${timePerMove}s per mutare`;
+    else desc = `${timePerMove}s • tablă parțial ocupată`;
+
+    levels.push({
+      levelIndex: i,
+      totalLevels,
+      targetScore: levelTarget,
+      timePerMove,
+      complexityWeight,
+      preFillCount,
+      title,
+      description: desc,
+    });
+  }
+
+  return levels;
+}
+
+function getCurrentCustomLevel(): CustomLevel {
+  return customLevels[campaignLevel];
+}
+
 let audioCtx: AudioContext | null = null;
 function getAudio(): AudioContext {
   if (!audioCtx) audioCtx = new AudioContext();
@@ -122,13 +218,31 @@ app.innerHTML = `
     <button id="btn-tutorial-back">ÎNAPOI</button>
   </div>
 
+  <div id="screen-campaign-setup" class="overlay" style="display:none">
+    <h1 style="font-size:1.3rem;letter-spacing:3px">🏆 CAMPAIGN</h1>
+    <p class="hs-text" style="font-size:0.7rem;margin-bottom:8px">Setează-ți provocarea personală</p>
+    <div class="setup-form">
+      <div class="setup-field">
+        <label>PUNCTAJ ȚINTĂ</label>
+        <input type="number" id="input-target" value="10000" min="500" max="9999999" step="500"/>
+      </div>
+      <div class="setup-field">
+        <label>NUMĂR NIVELE</label>
+        <input type="number" id="input-levels" value="10" min="2" max="20" step="1"/>
+      </div>
+      <div id="setup-preview" class="setup-preview"></div>
+    </div>
+    <button id="btn-campaign-start">START CAMPAIGN ▶</button>
+    <button id="btn-campaign-back" style="font-size:0.7rem;padding:8px 20px;opacity:0.6;margin-top:2px">ÎNAPOI</button>
+  </div>
+
   <div id="screen-mode" class="overlay" style="display:none">
     <h1 class="glitch">SELECT MODE</h1>
     <div class="mode-cards">
       <div class="mode-card" id="btn-campaign">
         <div class="mode-icon">🏆</div>
         <div class="mode-title">CAMPAIGN</div>
-        <div class="mode-desc">10 nivele cu obiective<br>Cronometru per mutare</div>
+        <div class="mode-desc">Tu alegi ținta și nivelele<br>Cronometru • Dificultate progresivă</div>
       </div>
       <div class="mode-card" id="btn-endless">
         <div class="mode-icon">∞</div>
@@ -165,7 +279,7 @@ app.innerHTML = `
 
   <div id="screen-win" class="overlay" style="display:none">
     <h1 class="glitch" style="color:#ffd700;text-shadow:0 0 20px #ffd700">YOU WIN</h1>
-    <p class="hs-text" style="color:#ffd700">Ai completat toate cele 10 nivele!</p>
+    <p id="win-subtitle" class="hs-text" style="color:#ffd700"></p>
     <p id="win-score" class="hs-text"></p>
     <p id="win-hs" class="hs-text"></p>
     <button id="btn-win-restart">PLAY AGAIN</button>
@@ -189,7 +303,7 @@ ctx = canvas.getContext('2d')!;
 
 // ─── HELPERS OVERLAY ──────────────────────────────────────────────────────────
 function showOnly(id: string) {
-  ['screen-menu','screen-mode','screen-tutorial','screen-hud','screen-level','screen-win','screen-over']
+  ['screen-menu','screen-mode','screen-tutorial','screen-campaign-setup','screen-hud','screen-level','screen-win','screen-over']
     .forEach(s => {
       const el = document.getElementById(s)!;
       el.style.display = s === id ? (s === 'screen-hud' ? 'block' : 'flex') : 'none';
@@ -234,17 +348,17 @@ function drawParticles() {
 // ─── HELPER PIESE ─────────────────────────────────────────────────────────────
 function makePiece(): Piece {
   if (gameMode === 'campaign') {
-    const lvl = CAMPAIGN_LEVELS[campaignLevel];
-    const titanChance = campaignLevel >= 2 ? 0.3 : 0.2;
+    const lvl = getCurrentCustomLevel();
+    const titanChance = lvl.levelIndex >= 2 ? 0.3 : 0.2;
     return new Piece(titanChance, lvl.complexityWeight);
   }
-  return new Piece(0.15, 0.15); // endless: mai relaxat, titan rar
+  return new Piece(0.15, 0.15);
 }
 
 // ─── TIMER ────────────────────────────────────────────────────────────────────
 function getTimeLimit(): number {
   if (gameMode === 'endless') return 0;
-  return CAMPAIGN_LEVELS[campaignLevel].timePerMove;
+  return getCurrentCustomLevel().timePerMove;
 }
 
 function startMoveTimer() {
@@ -290,8 +404,8 @@ function updateHUD() {
   document.getElementById('hud-scor')!.innerText = scor.toString();
   document.getElementById('hud-hs')!.innerText = getHS().toString();
   if (gameMode === 'campaign') {
-    const lvl = CAMPAIGN_LEVELS[campaignLevel];
-    document.getElementById('hud-nivel')!.innerText = (campaignLevel + 1).toString();
+    const lvl = getCurrentCustomLevel();
+    document.getElementById('hud-nivel')!.innerText = `${campaignLevel + 1}/${lvl.totalLevels}`;
     document.getElementById('hud-target')!.innerText = lvl.targetScore.toString();
     document.getElementById('hud-nivel-wrap')!.style.display = '';
     document.getElementById('hud-target-wrap')!.style.display = '';
@@ -330,8 +444,8 @@ function triggerLevelComplete() {
   stopMoveTimer();
   saveHS();
   screen = 'level_complete';
-  const lvl = CAMPAIGN_LEVELS[campaignLevel];
-  document.getElementById('lc-text')!.innerText = `Nivel ${campaignLevel + 1} completat! Obiectiv: ${lvl.targetScore} pts`;
+  const lvl = getCurrentCustomLevel();
+  document.getElementById('lc-text')!.innerText = `Nivel ${campaignLevel + 1}/${lvl.totalLevels} completat!`;
   document.getElementById('lc-score')!.innerText = `Scorul tău: ${scor} pts`;
   document.getElementById('lc-hs')!.innerText = `Best Campaign: ${highScoreCampaign} pts`;
   sounds.levelUp();
@@ -339,7 +453,7 @@ function triggerLevelComplete() {
 }
 
 function showLevelTitle(title: string) {
-  levelTransition = { title, alpha: 1.0, timer: 120 }; // ~2s la 60fps
+  levelTransition = { title, alpha: 1.0, timer: 120 };
 }
 
 function spawnWinParticles() {
@@ -360,28 +474,47 @@ function spawnWinParticles() {
 function drawLevelTransition() {
   if (!levelTransition) return;
   levelTransition.timer--;
-  if (levelTransition.timer <= 30) {
-    levelTransition.alpha = levelTransition.timer / 30;
-  }
+  if (levelTransition.timer <= 30) levelTransition.alpha = levelTransition.timer / 30;
   if (levelTransition.timer <= 0) { levelTransition = null; return; }
 
+  const lvl = getCurrentCustomLevel();
   ctx.save();
   ctx.globalAlpha = levelTransition.alpha;
-  ctx.fillStyle = 'rgba(0,0,0,0.55)';
-  ctx.fillRect(0, canvas.height / 2 - 50, canvas.width, 100);
-  
-  ctx.font = 'bold 26px Orbitron, sans-serif';
+  ctx.fillStyle = 'rgba(0,0,0,0.6)';
+  ctx.fillRect(0, canvas.height / 2 - 60, canvas.width, 120);
+
+  // Număr nivel
+  ctx.font = 'bold 11px Orbitron, sans-serif';
   ctx.textAlign = 'center';
-  ctx.shadowBlur = 30;
-  ctx.shadowColor = '#00ffff';
+  ctx.fillStyle = 'rgba(0,255,255,0.6)';
+  ctx.shadowBlur = 0;
+  ctx.fillText(`NIVEL ${campaignLevel + 1} / ${lvl.totalLevels}`, canvas.width / 2, canvas.height / 2 - 28);
+
+  // Titlu mare
+  ctx.font = 'bold 26px Orbitron, sans-serif';
+  ctx.shadowBlur = 30; ctx.shadowColor = '#00ffff';
   ctx.fillStyle = '#00ffff';
-  ctx.fillText(levelTransition.title, canvas.width / 2, canvas.height / 2 - 8);
-  
+  ctx.fillText(levelTransition.title, canvas.width / 2, canvas.height / 2 + 2);
+
+  // Descriere + timer info
   ctx.font = '11px Orbitron, sans-serif';
   ctx.fillStyle = 'rgba(224,230,237,0.8)';
   ctx.shadowBlur = 0;
-  const lvl = CAMPAIGN_LEVELS[campaignLevel];
-  ctx.fillText(lvl.description, canvas.width / 2, canvas.height / 2 + 18);
+  ctx.fillText(lvl.description, canvas.width / 2, canvas.height / 2 + 24);
+
+  // Dificultate vizuală — bare
+  const barW = 120; const barH = 5;
+  const barX = canvas.width / 2 - barW / 2;
+  const barY = canvas.height / 2 + 40;
+  const diffProgress = (campaignLevel + 1) / lvl.totalLevels;
+  ctx.fillStyle = 'rgba(255,255,255,0.1)';
+  ctx.fillRect(barX, barY, barW, barH);
+  ctx.fillStyle = diffProgress > 0.7 ? '#ff3333' : diffProgress > 0.4 ? '#ffd700' : '#00ffff';
+  ctx.fillRect(barX, barY, barW * diffProgress, barH);
+  ctx.fillStyle = 'rgba(224,230,237,0.5)';
+  ctx.font = '9px Orbitron, sans-serif';
+  ctx.fillText('DIFICULTATE', canvas.width / 2, barY + 16);
+
   ctx.restore();
 }
 
@@ -390,6 +523,8 @@ function triggerYouWin() {
   saveHS();
   screen = 'you_win';
   winParticlesActive = true;
+  const lvl = getCurrentCustomLevel();
+  document.getElementById('win-subtitle')!.innerText = `Ai completat toate cele ${lvl.totalLevels} nivele!`;
   document.getElementById('win-score')!.innerText = 'SCOR FINAL: ' + scor;
   document.getElementById('win-hs')!.innerText = 'BEST CAMPAIGN: ' + highScoreCampaign;
   showOnly('screen-win');
@@ -399,35 +534,73 @@ function triggerYouWin() {
 function handleMoveLogic() {
   mutariEfectuate++;
   const result = grid.clearLines();
-  if (result.destroyedCells.length > 0) {
-    result.destroyedCells.forEach(cell => createExplosion(cell.x, cell.y, cell.color));
+
+  if (result.totalCleared > 0) {
+    // Streak
+    streak++;
+    streakMultiplier = Math.min(4, 1 + Math.floor(streak / 2));
+    const bonusStreak = streak >= 3 ? Math.floor(result.points * (streakMultiplier - 1)) : 0;
+    const totalPoints = result.points + bonusStreak;
+
+    // Animație celulă cu celulă
+    clearAnim = {
+      cells: result.clearedCoords.sort((a,b) => a.c - b.c || a.r - b.r),
+      timer: 0,
+      done: false
+    };
+
+    // Explozie particule
+    result.destroyedCells.forEach(cell => createExplosion(cell.x, cell.y, cell.color, 8));
+
+    // Score popup mare în centrul tablei
+    const popupColor = result.totalCleared >= 3 ? '#ffd700' : result.totalCleared >= 2 ? '#00ffff' : '#ffffff';
+    addScorePopup(canvas.width / 2, 180, `+${totalPoints}`, popupColor);
+    if (bonusStreak > 0) addScorePopup(canvas.width / 2, 210, `🔥 x${streakMultiplier} STREAK!`, '#ff8c00');
+
+    // Combo text + shake
     if (result.totalCleared >= 3) {
       sounds.combo();
-      comboFlash = { text: `${result.totalCleared}× COMBO! +${result.points}`, alpha: 1.0, timer: 90, color: '#ffd700' };
+      triggerShake(8);
+      comboFlash = { text: `${result.totalCleared}× COMBO!`, alpha: 1.0, timer: 90, color: '#ffd700' };
     } else if (result.totalCleared >= 2) {
       sounds.combo();
-      comboFlash = { text: `DOUBLE CLEAR! +${result.points}`, alpha: 1.0, timer: 75, color: '#00ffff' };
+      triggerShake(4);
+      comboFlash = { text: `DOUBLE CLEAR!`, alpha: 1.0, timer: 75, color: '#00ffff' };
     } else {
       sounds.clear();
+      triggerShake(2);
     }
+
+    scor += totalPoints;
   } else {
+    // Fără linie — reset streak
+    streak = 0;
+    streakMultiplier = 1;
     sounds.place();
+    addScorePopup(
+      (ghostGridX ?? 5) * grid.cellSize + grid.cellSize,
+      (ghostGridY ?? 5) * grid.cellSize,
+      '+10',
+      'rgba(255,255,255,0.5)'
+    );
+    scor += 10;
   }
 
-  scor += result.points;
   const geom = grid.checkGeometryBonus();
   if (geom > 0) {
     scor += geom;
-    comboFlash = { text: `⬛ GEOMETRY BONUS! +${geom}`, alpha: 1.0, timer: 90, color: '#ff00ff' };
+    triggerShake(10);
+    addScorePopup(canvas.width / 2, 150, `+${geom} GEOMETRY!`, '#ff00ff');
+    comboFlash = { text: `⬛ GEOMETRY BONUS!`, alpha: 1.0, timer: 90, color: '#ff00ff' };
   }
 
   const pragGrav = (gameMode === 'campaign' && campaignLevel >= 4) ? 3 : 4;
   if (mutariEfectuate % pragGrav === 0) grid.applyGravity();
 
   if (gameMode === 'campaign') {
-    const lvl = CAMPAIGN_LEVELS[campaignLevel];
+    const lvl = getCurrentCustomLevel();
     if (scor >= lvl.targetScore) {
-      if (campaignLevel >= CAMPAIGN_LEVELS.length - 1) {
+      if (campaignLevel >= customLevels.length - 1) {
         triggerYouWin(); return;
       } else {
         triggerLevelComplete(); return;
@@ -435,10 +608,10 @@ function handleMoveLogic() {
     }
   }
 
-  // Endless: niciodată game over — dacă e blocat, șterge rândul de jos
   if (gameMode === 'endless') {
     if (!grid.poate_plasa_orice(pieseDisponibile)) {
       for (let c = 0; c < grid.size; c++) grid.cells[grid.size - 1][c] = 0;
+      streak = 0;
       comboFlash = { text: '∞ RESET — continuă!', alpha: 1.0, timer: 60, color: '#4CAF50' };
     }
     updateHUD();
@@ -535,17 +708,52 @@ document.getElementById('btn-play')!.addEventListener('click', () => {
 document.getElementById('btn-tutorial')!.addEventListener('click', () => showOnly('screen-tutorial'));
 document.getElementById('btn-tutorial-back')!.addEventListener('click', () => showOnly('screen-menu'));
 
-document.getElementById('btn-campaign')!.addEventListener('click', () => startGame('campaign'));
+document.getElementById('btn-campaign')!.addEventListener('click', () => {
+  showOnly('screen-campaign-setup');
+  updateSetupPreview();
+});
 document.getElementById('btn-endless')!.addEventListener('click',  () => startGame('endless'));
 
+document.getElementById('btn-campaign-back')!.addEventListener('click', () => showOnly('screen-mode'));
+
+function updateSetupPreview() {
+  const targetInput = document.getElementById('input-target') as HTMLInputElement;
+  const levelsInput = document.getElementById('input-levels') as HTMLInputElement;
+  const preview = document.getElementById('setup-preview')!;
+  const target = Math.max(500, Number(targetInput.value) || 10000);
+  const levels = Math.min(20, Math.max(2, Number(levelsInput.value) || 10));
+  const previewLevels = generateCustomLevels(target, levels);
+  const first = previewLevels[0];
+  const mid = previewLevels[Math.floor(levels / 2)];
+  const last = previewLevels[levels - 1];
+  preview.innerHTML = `
+    <div class="preview-row"><span>Nivel 1</span><span>${first.targetScore} pts • fără timer</span></div>
+    <div class="preview-row"><span>Nivel ${Math.floor(levels/2)+1}</span><span>${mid.targetScore} pts • ${mid.timePerMove > 0 ? mid.timePerMove+'s/mutare' : 'fără timer'}</span></div>
+    <div class="preview-row"><span>Nivel ${levels} (final)</span><span>${last.targetScore} pts • ${last.timePerMove}s/mutare</span></div>
+  `;
+}
+
+document.getElementById('input-target')!.addEventListener('input', updateSetupPreview);
+document.getElementById('input-levels')!.addEventListener('input', updateSetupPreview);
+
+document.getElementById('btn-campaign-start')!.addEventListener('click', () => {
+  const targetInput = document.getElementById('input-target') as HTMLInputElement;
+  const levelsInput = document.getElementById('input-levels') as HTMLInputElement;
+  customTargetScore = Math.max(500, Number(targetInput.value) || 10000);
+  customTotalLevels = Math.min(20, Math.max(2, Number(levelsInput.value) || 10));
+  customLevels = generateCustomLevels(customTargetScore, customTotalLevels);
+  startGame('campaign');
+});
+
 document.getElementById('btn-next')!.addEventListener('click', () => {
-  if (campaignLevel >= CAMPAIGN_LEVELS.length - 1) {
+  if (campaignLevel >= customLevels.length - 1) {
     triggerYouWin();
     return;
   }
   campaignLevel++;
+  streak = 0; streakMultiplier = 1;
   grid.reset();
-  const lvl = CAMPAIGN_LEVELS[campaignLevel];
+  const lvl = getCurrentCustomLevel();
   if (lvl.preFillCount > 0) grid.preFill(lvl.preFillCount);
   pieseDisponibile = [makePiece(), makePiece(), makePiece()];
   screen = 'playing';
@@ -569,13 +777,15 @@ function startGame(mode: GameMode) {
   scor = 0;
   campaignLevel = 0;
   mutariEfectuate = 0;
-  particles = [];
+  streak = 0; streakMultiplier = 1;
+  particles = []; scorePopups = [];
   winParticlesActive = false;
   levelTransition = null;
   comboFlash = null;
+  clearAnim = null;
   grid.reset();
   if (mode === 'campaign') {
-    const lvl = CAMPAIGN_LEVELS[0];
+    const lvl = getCurrentCustomLevel();
     if (lvl.preFillCount > 0) grid.preFill(lvl.preFillCount);
   }
   pieseDisponibile = [makePiece(), makePiece(), makePiece()];
@@ -583,7 +793,7 @@ function startGame(mode: GameMode) {
   showOnly('screen-hud');
   updateHUD();
   startMoveTimer();
-  if (mode === 'campaign') showLevelTitle(CAMPAIGN_LEVELS[0].title);
+  if (mode === 'campaign') showLevelTitle(getCurrentCustomLevel().title);
 }
 
 // ─── RENDER LOOP ──────────────────────────────────────────────────────────────
@@ -632,7 +842,48 @@ function drawComboFlash() {
   ctx.restore();
 }
 
+function drawScorePopups() {
+  for (let i = scorePopups.length - 1; i >= 0; i--) {
+    const p = scorePopups[i];
+    p.y += p.vy;
+    p.life -= 0.018;
+    if (p.life <= 0) { scorePopups.splice(i, 1); continue; }
+    ctx.save();
+    ctx.globalAlpha = p.life;
+    ctx.font = `bold ${p.text.startsWith('+1') ? 16 : 24}px Orbitron, sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.shadowBlur = 20;
+    ctx.shadowColor = p.color;
+    ctx.fillStyle = p.color;
+    ctx.fillText(p.text, p.x, p.y);
+    ctx.restore();
+  }
+}
+
+function drawStreak() {
+  if (streak < 2) return;
+  const flames = '🔥'.repeat(Math.min(streak, 5));
+  ctx.save();
+  ctx.globalAlpha = 0.9;
+  ctx.font = 'bold 13px Orbitron, sans-serif';
+  ctx.textAlign = 'right';
+  ctx.fillStyle = '#ff8c00';
+  ctx.shadowBlur = 10;
+  ctx.shadowColor = '#ff8c00';
+  ctx.fillText(`${flames} ×${streakMultiplier}`, canvas.width - 6, 18);
+  ctx.restore();
+}
+
 function gameLoop() {
+  // Screen shake
+  if (shakeIntensity > 0.1) {
+    shakeX = (Math.random() - 0.5) * shakeIntensity;
+    shakeY = (Math.random() - 0.5) * shakeIntensity;
+    shakeIntensity *= 0.75;
+  } else {
+    shakeX = 0; shakeY = 0; shakeIntensity = 0;
+  }
+
   ctx.fillStyle = '#020204';
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
@@ -652,11 +903,22 @@ function gameLoop() {
     return;
   }
 
+  ctx.save();
+  ctx.translate(shakeX, shakeY);
+
   updateParticles();
   drawParticles();
 
   if (screen === 'playing') {
     grid.draw(ctx);
+
+    // Animație dispariție celulă cu celulă
+    if (clearAnim && !clearAnim.done) {
+      clearAnim.timer += 0.05;
+      grid.drawClearAnim(ctx, clearAnim.cells, clearAnim.timer);
+      if (clearAnim.timer >= 1.5) clearAnim = null;
+    }
+
     if (piesaInMana) drawGhostPreview();
 
     const timp = Date.now() * 0.003;
@@ -691,10 +953,13 @@ function gameLoop() {
     ctx.beginPath(); ctx.moveTo(10, 415); ctx.lineTo(390, 415); ctx.stroke();
     ctx.setLineDash([]);
 
+    drawScorePopups();
+    drawStreak();
     drawComboFlash();
     drawLevelTransition();
   }
 
+  ctx.restore();
   requestAnimationFrame(gameLoop);
 }
 
