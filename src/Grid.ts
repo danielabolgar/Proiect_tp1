@@ -14,16 +14,16 @@ export class Grid {
 
     const normalCells: { x: number; y: number }[] = [];
     const titanCells: { x: number; y: number }[] = [];
+    const dangerCells: { x: number; y: number }[] = [];
 
     for (let r = 0; r < this.size; r++) {
       for (let c = 0; c < this.size; c++) {
         const x = c * this.cellSize;
         const y = r * this.cellSize;
         ctx.strokeRect(x, y, this.cellSize, this.cellSize);
-        if (this.cells[r][c] !== 0) {
-          if (this.cells[r][c] === -1) titanCells.push({ x, y });
-          else normalCells.push({ x, y });
-        }
+        if (this.cells[r][c] === -1) titanCells.push({ x, y });
+        else if (this.cells[r][c] === 2) dangerCells.push({ x, y });
+        else if (this.cells[r][c] !== 0) normalCells.push({ x, y });
       }
     }
 
@@ -72,6 +72,27 @@ export class Grid {
         ctx.arc(x + this.cellSize / 2, y + this.cellSize / 2, 6, 0, Math.PI * 2);
         ctx.stroke();
       });
+    }
+
+    if (dangerCells.length > 0) {
+      ctx.shadowBlur = 12;
+      ctx.shadowColor = "#ff3333";
+      dangerCells.forEach(({ x, y }) => {
+        const gradient = ctx.createLinearGradient(x, y, x + this.cellSize, y + this.cellSize);
+        gradient.addColorStop(0, "#880000");
+        gradient.addColorStop(1, "#ff3333");
+        ctx.fillStyle = gradient;
+        this.drawRoundedRect(ctx, x + 3, y + 3, this.cellSize - 6, this.cellSize - 6, 6);
+        ctx.fill();
+        // X în mijloc
+        ctx.strokeStyle = "rgba(255,255,255,0.6)";
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(x + 10, y + 10); ctx.lineTo(x + this.cellSize - 10, y + this.cellSize - 10);
+        ctx.moveTo(x + this.cellSize - 10, y + 10); ctx.lineTo(x + 10, y + this.cellSize - 10);
+        ctx.stroke();
+      });
+      ctx.shadowBlur = 0;
     }
   }
 
@@ -128,7 +149,8 @@ export class Grid {
     cellsToEmpty.forEach(coord => {
       const [r, c] = coord.split(',').map(Number);
       const val = this.cells[r][c];
-      destroyedCells.push({ x: c * this.cellSize, y: r * this.cellSize, color: val === -1 ? "#ff00ff" : "#00ffff" });
+      const color = val === -1 ? "#ff00ff" : val === 2 ? "#ff3333" : "#00ffff";
+      destroyedCells.push({ x: c * this.cellSize, y: r * this.cellSize, color });
       clearedCoords.push({r, c});
       if (val === -1) { this.cells[r][c] = 1; titanPoints += 50; }
       else this.cells[r][c] = 0;
@@ -147,8 +169,7 @@ export class Grid {
           const targetR = gridY + r;
           const targetC = gridX + c;
           if (targetR < 0 || targetR >= this.size || targetC < 0 || targetC >= this.size) return false;
-          if (this.cells[targetR][targetC] !== 0) return false;
-        }
+          if (this.cells[targetR][targetC] !== 0) return false;        }
       }
     }
     return true;

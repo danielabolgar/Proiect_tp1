@@ -5,11 +5,8 @@ export interface LevelConfig {
   targetScore: number;
   timePerMove: number;
   description: string;
-  // Titlu afișat la tranziție — jucătorul știe în ce „lume" intră
   title: string;
-  // 0.0–1.0: probabilitate să cadă o piesă complexă (5+ celule, forme L/Z/cruce)
   complexityWeight: number;
-  // Câte celule random să fie pre-umplute la start (simulate blocaje)
   preFillCount: number;
 }
 

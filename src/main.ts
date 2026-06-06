@@ -1,15 +1,12 @@
-
 import './style.css'
 import { Grid } from './Grid'
 import { Piece } from './Piece'
 
 const app = document.querySelector<HTMLDivElement>('#app')!;
 
-// ─── TIPURI ───────────────────────────────────────────────────────────────────
 type GameMode = 'campaign' | 'endless';
 type GameScreen = 'menu' | 'mode_select' | 'tutorial' | 'playing' | 'level_complete' | 'you_win' | 'game_over';
 
-// ─── STATE ────────────────────────────────────────────────────────────────────
 let gameMode: GameMode = 'endless';
 let screen: GameScreen = 'menu';
 
@@ -17,7 +14,6 @@ let scor = 0;
 let campaignLevel = 0;
 let mutariEfectuate = 0;
 
-// High score separat per mod
 let highScoreCampaign = Number(localStorage.getItem('zenblocks_hs_campaign')) || 0;
 let highScoreEndless   = Number(localStorage.getItem('zenblocks_hs_endless'))  || 0;
 function getHS(): number {
@@ -31,51 +27,41 @@ function saveHS() {
 }
 function getBestHS(): number { return Math.max(highScoreCampaign, highScoreEndless); }
 
-// Piese
 let pieseDisponibile: Piece[] = [];
 let piesaSelectata: Piece | null = null;
 let piesaInMana = false;
 let offsetX = 0;
 let offsetY = 0;
 
-// Timer
 let moveTimeLeft = 0;
 let moveTimerInterval: number | null = null;
 let timerWarning = false;
 
-// Particule
 interface Particle { x: number; y: number; vx: number; vy: number; life: number; color: string; size?: number; }
 let particles: Particle[] = [];
 
-// Tranziție nivel
 let levelTransition: { title: string; alpha: number; timer: number } | null = null;
 let winParticlesActive = false;
 
-// Combo flash
 let comboFlash: { text: string; alpha: number; timer: number; color: string } | null = null;
 
-// Streak
 let streak = 0;
 let streakMultiplier = 1;
 
-// Score popups — cifre care sar pe ecran
 interface ScorePopup { x: number; y: number; text: string; life: number; color: string; vy: number; }
 let scorePopups: ScorePopup[] = [];
 function addScorePopup(x: number, y: number, text: string, color = '#ffffff') {
   scorePopups.push({ x, y, text, life: 1.0, color, vy: -1.5 });
 }
 
-// Screen shake
 let shakeIntensity = 0;
 let shakeX = 0;
 let shakeY = 0;
 function triggerShake(intensity: number) { shakeIntensity = intensity; }
 
-// Animație dispariție celulă cu celulă
 interface ClearAnim { cells: { r: number; c: number }[]; timer: number; done: boolean; }
 let clearAnim: ClearAnim | null = null;
 
-// Mouse / touch
 let mouseCanvasX = 0;
 let mouseCanvasY = 0;
 let ghostGridX: number | null = null;
@@ -86,7 +72,6 @@ const grid = new Grid(40);
 let canvas: HTMLCanvasElement;
 let ctx: CanvasRenderingContext2D;
 
-// ─── CAMPAIGN CUSTOM ──────────────────────────────────────────────────────────
 interface CustomLevel {
   levelIndex: number;
   totalLevels: number;
@@ -111,14 +96,11 @@ function generateCustomLevels(targetScore: number, totalLevels: number): CustomL
   ];
 
   for (let i = 0; i < totalLevels; i++) {
-    const progress = i / (totalLevels - 1 || 1); // 0 → 1
+    const progress = i / (totalLevels - 1 || 1); 
 
-    // Target: distribuție exponențială — nivelele de la final au ținte mult mai mari
     const exp = Math.pow(progress, 1.5);
     const levelTarget = Math.round(targetScore * exp / 50) * 50 || Math.round(targetScore / totalLevels * (i + 1) / 50) * 50;
 
-    // Timer: pornește de la 0 (fără timer) la nivel 1, ajunge la min 6s la final
-    // Primele 20% din nivele nu au timer
     const timerStart = Math.floor(totalLevels * 0.2);
     let timePerMove = 0;
     if (i >= timerStart) {
@@ -126,10 +108,8 @@ function generateCustomLevels(targetScore: number, totalLevels: number): CustomL
       timePerMove = Math.round(35 - timerProgress * 29); // 35s → 6s
     }
 
-    // Complexitate piese: 0.1 → 1.0
     const complexityWeight = Math.min(1.0, 0.1 + progress * 0.9);
 
-    // preFill: 0 → ~25 celule la final, dar doar din jumătatea nivelelor
     const fillStart = Math.floor(totalLevels * 0.3);
     const preFillCount = i >= fillStart
       ? Math.round(((i - fillStart) / (totalLevels - fillStart)) * 25)
@@ -185,16 +165,56 @@ function playTone(freq: number, type: OscillatorType, duration: number, vol = 0.
 }
 
 const sounds = {
-  place:    () => gameMode === 'endless'
-    ? playTone(440 * Math.pow(2, [0,2,4,7,9][Math.floor(Math.random()*5)]/12), 'sine', 0.4, 0.1, 0.02)
-    : playTone(320, 'sine', 0.12, 0.14),
-  clear:    () => { playTone(520, 'sine', 0.25, 0.22); playTone(780, 'sine', 0.25, 0.16, 0.05); },
-  combo:    () => { playTone(660, 'sine', 0.35, 0.25); playTone(990, 'triangle', 0.35, 0.18, 0.08); playTone(1320, 'sine', 0.4, 0.14, 0.15); },
-  gameOver: () => { playTone(220, 'sawtooth', 0.6, 0.3); playTone(110, 'sawtooth', 0.8, 0.25, 0.1); },
-  levelUp:  () => { playTone(440, 'sine', 0.2, 0.2); playTone(660, 'sine', 0.25, 0.18, 0.1); playTone(880, 'sine', 0.35, 0.15, 0.2); },
+
+  place: () => {
+    playTone(440 * Math.pow(2, [0,2,4,7,9][Math.floor(Math.random()*5)]/12), 'sine', 0.18, 0.08, 0.005);
+  },
+
+  clear: () => {
+    playTone(523, 'sine', 0.3, 0.12, 0.01);
+    setTimeout(() => playTone(659, 'sine', 0.3, 0.10, 0.01), 60);
+    setTimeout(() => playTone(784, 'sine', 0.35, 0.08, 0.01), 120);
+  },
+
+  combo: () => {
+    playTone(523, 'sine', 0.4, 0.15, 0.01);
+    setTimeout(() => playTone(659, 'sine', 0.4, 0.13, 0.01), 50);
+    setTimeout(() => playTone(784, 'sine', 0.4, 0.11, 0.01), 100);
+    setTimeout(() => playTone(1046, 'sine', 0.5, 0.10, 0.01), 160);
+  },
+
+  gameOver: () => {
+    playTone(392, 'sine', 0.5, 0.15, 0.02);
+    setTimeout(() => playTone(330, 'sine', 0.6, 0.13, 0.02), 200);
+    setTimeout(() => playTone(262, 'sine', 0.8, 0.12, 0.02), 450);
+  },
+
+  levelUp: () => {
+    playTone(523, 'sine', 0.2, 0.15, 0.01);
+    setTimeout(() => playTone(659, 'sine', 0.2, 0.13, 0.01), 80);
+    setTimeout(() => playTone(784, 'sine', 0.2, 0.12, 0.01), 160);
+    setTimeout(() => playTone(1046, 'sine', 0.35, 0.14, 0.01), 260);
+  },
+
+  fever: () => {
+    playTone(880, 'sine', 0.25, 0.14, 0.01);
+    setTimeout(() => playTone(1108, 'sine', 0.3, 0.12, 0.01), 80);
+    setTimeout(() => playTone(1318, 'sine', 0.35, 0.10, 0.01), 160);
+  },
+
+  rush: () => {
+    playTone(660, 'sine', 0.15, 0.12, 0.005);
+    setTimeout(() => playTone(880, 'sine', 0.15, 0.10, 0.005), 60);
+    setTimeout(() => playTone(660, 'sine', 0.15, 0.10, 0.005), 120);
+  },
+
+  danger: () => {
+    playTone(196, 'sine', 0.5, 0.18, 0.02);
+    setTimeout(() => playTone(165, 'sine', 0.6, 0.15, 0.02), 250);
+  },
 };
 
-// ─── HTML ─────────────────────────────────────────────────────────────────────
+
 app.innerHTML = `
 <div class="game-container">
 
@@ -214,6 +234,8 @@ app.innerHTML = `
       <div class="tut-item"><span class="tut-icon">⬛</span><div><b>Geometry Bonus</b> — formezi un pătrat 3×3 complet pe tablă? +500 pts instant.</div></div>
       <div class="tut-item"><span class="tut-icon">🌊</span><div><b>Gravitație</b> — din nivel 5, la fiecare 3 mutări piesele de pe tablă cad în jos.</div></div>
       <div class="tut-item"><span class="tut-icon">⏱</span><div><b>Timer</b> — în Campaign ai X secunde per mutare. Dacă expiră, jocul se termină.</div></div>
+      <div class="tut-item"><span class="tut-icon">🔥</span><div><b>FEVER</b> (Endless) — eveniment random: liniile valorează 3× timp de 10 mutări.</div></div>
+      <div class="tut-item"><span class="tut-icon">⚠</span><div><b>Tablă care urcă</b> (Endless) — la fiecare 500 pts apare un rând nou de jos. Dacă ajunge sus — game over!</div></div>
     </div>
     <button id="btn-tutorial-back">ÎNAPOI</button>
   </div>
@@ -297,11 +319,11 @@ app.innerHTML = `
 </div>
 `;
 
-// ─── REFS ─────────────────────────────────────────────────────────────────────
+
 canvas = document.querySelector<HTMLCanvasElement>('#gameCanvas')!;
 ctx = canvas.getContext('2d')!;
 
-// ─── HELPERS OVERLAY ──────────────────────────────────────────────────────────
+
 function showOnly(id: string) {
   ['screen-menu','screen-mode','screen-tutorial','screen-campaign-setup','screen-hud','screen-level','screen-win','screen-over']
     .forEach(s => {
@@ -312,7 +334,7 @@ function showOnly(id: string) {
   cw.style.display = (id === 'screen-hud') ? 'inline-block' : 'none';
 }
 
-// ─── PARTICULE ────────────────────────────────────────────────────────────────
+
 function createExplosion(x: number, y: number, color: string, count = 12) {
   for (let i = 0; i < count; i++) {
     particles.push({ 
@@ -345,17 +367,173 @@ function drawParticles() {
   ctx.globalAlpha = 1; ctx.shadowBlur = 0;
 }
 
-// ─── HELPER PIESE ─────────────────────────────────────────────────────────────
+
 function makePiece(): Piece {
   if (gameMode === 'campaign') {
     const lvl = getCurrentCustomLevel();
     const titanChance = lvl.levelIndex >= 2 ? 0.3 : 0.2;
     return new Piece(titanChance, lvl.complexityWeight);
   }
-  return new Piece(0.15, 0.15);
+  return getEndlessPiece();
 }
 
-// ─── TIMER ────────────────────────────────────────────────────────────────────
+
+let menuMusicNodes: { osc: OscillatorNode; gain: GainNode }[] = [];
+let menuMusicInterval: number | null = null;
+let menuMusicActive = false;
+
+function startMenuMusic() {
+  if (menuMusicActive) return;
+  menuMusicActive = true;
+
+  const ac = getAudio();
+
+
+  const droneFreqs = [130.81, 130.81 * 1.003]; 
+  droneFreqs.forEach(freq => {
+    const osc = ac.createOscillator();
+    const gain = ac.createGain();
+    const filter = ac.createBiquadFilter();
+    filter.type = 'lowpass';
+    filter.frequency.value = 600;
+    osc.connect(filter); filter.connect(gain); gain.connect(ac.destination);
+    osc.type = 'sine';
+    osc.frequency.value = freq;
+    gain.gain.setValueAtTime(0, ac.currentTime);
+    gain.gain.linearRampToValueAtTime(0.06, ac.currentTime + 2);
+    osc.start();
+    menuMusicNodes.push({ osc, gain });
+  });
+
+
+  const scale = [261.63, 293.66, 329.63, 392.00, 440.00, 523.25, 587.33, 659.25];
+  let noteIndex = 0;
+
+  const playNextNote = () => {
+    if (!menuMusicActive) return;
+    const ac2 = getAudio();
+    const freq = scale[Math.floor(Math.random() * scale.length)];
+    const osc = ac2.createOscillator();
+    const gain = ac2.createGain();
+    osc.connect(gain); gain.connect(ac2.destination);
+    osc.type = 'sine';
+    osc.frequency.value = freq;
+    gain.gain.setValueAtTime(0, ac2.currentTime);
+    gain.gain.linearRampToValueAtTime(0.05, ac2.currentTime + 0.1);
+    gain.gain.exponentialRampToValueAtTime(0.001, ac2.currentTime + 2.5);
+    osc.start(ac2.currentTime);
+    osc.stop(ac2.currentTime + 2.5);
+    noteIndex++;
+
+
+    if (noteIndex % 4 === 0) {
+      const osc2 = ac2.createOscillator();
+      const gain2 = ac2.createGain();
+      osc2.connect(gain2); gain2.connect(ac2.destination);
+      osc2.type = 'sine';
+      osc2.frequency.value = freq * 2;
+      gain2.gain.setValueAtTime(0, ac2.currentTime + 0.3);
+      gain2.gain.linearRampToValueAtTime(0.03, ac2.currentTime + 0.4);
+      gain2.gain.exponentialRampToValueAtTime(0.001, ac2.currentTime + 2.0);
+      osc2.start(ac2.currentTime + 0.3);
+      osc2.stop(ac2.currentTime + 2.0);
+    }
+  };
+
+  playNextNote();
+  menuMusicInterval = window.setInterval(playNextNote, 1800);
+}
+
+function stopMenuMusic() {
+  if (!menuMusicActive) return;
+  menuMusicActive = false;
+
+  if (menuMusicInterval !== null) {
+    clearInterval(menuMusicInterval);
+    menuMusicInterval = null;
+  }
+
+  const ac = getAudio();
+  menuMusicNodes.forEach(({ gain, osc }) => {
+    gain.gain.linearRampToValueAtTime(0, ac.currentTime + 1.0);
+    osc.stop(ac.currentTime + 1.1);
+  });
+  menuMusicNodes = [];
+}
+
+type EventType = 'fever' | 'rush';
+interface GameEvent {
+  type: EventType;
+  movesLeft: number;
+  totalMoves: number;
+}
+let activeEvent: GameEvent | null = null;
+let nextEventIn = 8; 
+let endlessWave = 0; 
+let endlessScoreCheckpoint = 0; 
+
+const EVENT_DURATION = 10; 
+const RISING_ROW_SCORE = 1500;
+
+function triggerRandomEvent() {
+  if (gameMode !== 'endless') return;
+  const types: EventType[] = ['fever', 'rush'];
+  const type = types[Math.floor(Math.random() * types.length)];
+  activeEvent = { type, movesLeft: EVENT_DURATION, totalMoves: EVENT_DURATION };
+
+  const labels: Record<EventType, string> = {
+    fever: '🔥 FEVER — liniile valorează 3×!',
+    rush:  '⚡ RUSH — piese simple pentru 10 mutări!',
+  };
+  const colors: Record<EventType, string> = {
+    fever: '#ff4400', rush: '#00ffff',
+  };
+  comboFlash = { text: labels[type], alpha: 1.0, timer: 120, color: colors[type] };
+  triggerShake(6);
+
+  if (type === 'fever') sounds.fever();
+  else sounds.rush();
+}
+
+function addRisingRow() {
+
+  for (let r = 0; r < grid.size - 1; r++) {
+    grid.cells[r] = [...grid.cells[r + 1]];
+  }
+
+  const newRow = Array(grid.size).fill(2); 
+  const gaps = 2 + Math.floor(Math.random() * 2); 
+  const gapPositions = new Set<number>();
+  while (gapPositions.size < gaps) gapPositions.add(Math.floor(Math.random() * grid.size));
+  gapPositions.forEach(c => { newRow[c] = 0; });
+  grid.cells[grid.size - 1] = newRow;
+
+  endlessWave++;
+  triggerShake(5);
+  addScorePopup(canvas.width / 2, 300, '⚠ TABLĂ URCĂ!', '#ff3333');
+  sounds.danger();
+}
+
+function checkRisingRows() {
+  if (gameMode !== 'endless') return;
+  if (scor - endlessScoreCheckpoint >= RISING_ROW_SCORE) {
+    endlessScoreCheckpoint = scor;
+    addRisingRow();
+    
+    for (let c = 0; c < grid.size; c++) {
+      if (grid.cells[1][c] !== 0) {
+        triggerGameOver('Blocurile au ajuns prea sus!');
+        return;
+      }
+    }
+  }
+}
+
+function getEndlessPiece(): Piece {
+  if (activeEvent?.type === 'rush') return new Piece(0, 0.05); // doar piese simple
+  return new Piece(0.15, 0.15 + endlessWave * 0.02); // complexitate crește cu valurile
+}
+
 function getTimeLimit(): number {
   if (gameMode === 'endless') return 0;
   return getCurrentCustomLevel().timePerMove;
@@ -388,7 +566,7 @@ function stopMoveTimer() {
   if (moveTimerInterval !== null) { clearInterval(moveTimerInterval); moveTimerInterval = null; }
 }
 
-// ─── UI HUD ───────────────────────────────────────────────────────────────────
+
 function updateTimerUI() {
   const limit = getTimeLimit();
   const pct = limit > 0 ? (moveTimeLeft / limit) * 100 : 100;
@@ -417,17 +595,19 @@ function updateHUD() {
   }
 }
 
-// ─── GAME OVER / WIN ──────────────────────────────────────────────────────────
+
 function triggerGameOver(reason: string) {
   stopMoveTimer();
   const wasHS = scor > getHS();
   saveHS();
   screen = 'game_over';
 
-  // Explică clar motivul
+
   const reasonEl = document.getElementById('over-reason')!;
   if (reason.includes('timp')) {
     reasonEl.innerHTML = '⏱ Timpul a expirat.<br>Data viitoare mișcă-te mai repede!';
+  } else if (reason.includes('sus')) {
+    reasonEl.innerHTML = '⚠ Blocurile au ajuns prea sus!<br>Curăță linii mai repede data viitoare.';
   } else {
     reasonEl.innerHTML = '🧩 Nu mai există loc pentru nicio piesă.<br>Tabla s-a blocat complet.';
   }
@@ -483,26 +663,26 @@ function drawLevelTransition() {
   ctx.fillStyle = 'rgba(0,0,0,0.6)';
   ctx.fillRect(0, canvas.height / 2 - 60, canvas.width, 120);
 
-  // Număr nivel
+
   ctx.font = 'bold 11px Orbitron, sans-serif';
   ctx.textAlign = 'center';
   ctx.fillStyle = 'rgba(0,255,255,0.6)';
   ctx.shadowBlur = 0;
   ctx.fillText(`NIVEL ${campaignLevel + 1} / ${lvl.totalLevels}`, canvas.width / 2, canvas.height / 2 - 28);
 
-  // Titlu mare
+
   ctx.font = 'bold 26px Orbitron, sans-serif';
   ctx.shadowBlur = 30; ctx.shadowColor = '#00ffff';
   ctx.fillStyle = '#00ffff';
   ctx.fillText(levelTransition.title, canvas.width / 2, canvas.height / 2 + 2);
 
-  // Descriere + timer info
+
   ctx.font = '11px Orbitron, sans-serif';
   ctx.fillStyle = 'rgba(224,230,237,0.8)';
   ctx.shadowBlur = 0;
   ctx.fillText(lvl.description, canvas.width / 2, canvas.height / 2 + 24);
 
-  // Dificultate vizuală — bare
+
   const barW = 120; const barH = 5;
   const barX = canvas.width / 2 - barW / 2;
   const barY = canvas.height / 2 + 40;
@@ -530,60 +710,52 @@ function triggerYouWin() {
   showOnly('screen-win');
 }
 
-// ─── LOGICĂ MUTARE ────────────────────────────────────────────────────────────
+
 function handleMoveLogic() {
   mutariEfectuate++;
   const result = grid.clearLines();
 
   if (result.totalCleared > 0) {
-    // Streak
+
+    const feverMult = activeEvent?.type === 'fever' ? 3 : 1;
+    const basePoints = result.points * feverMult;
+
+
     streak++;
     streakMultiplier = Math.min(4, 1 + Math.floor(streak / 2));
-    const bonusStreak = streak >= 3 ? Math.floor(result.points * (streakMultiplier - 1)) : 0;
-    const totalPoints = result.points + bonusStreak;
+    const bonusStreak = streak >= 3 ? Math.floor(basePoints * (streakMultiplier - 1)) : 0;
+    const totalPoints = basePoints + bonusStreak;
 
-    // Animație celulă cu celulă
-    clearAnim = {
-      cells: result.clearedCoords.sort((a,b) => a.c - b.c || a.r - b.r),
-      timer: 0,
-      done: false
-    };
 
-    // Explozie particule
+    let dangerBonus = 0;
+    result.clearedCoords.forEach(({r}) => {
+      if (grid.cells[r]?.includes(2)) dangerBonus += 200;
+    });
+    if (dangerBonus > 0) addScorePopup(canvas.width / 2, 160, `+${dangerBonus} DANGER CLEAR!`, '#ff3333');
+
+    clearAnim = { cells: result.clearedCoords.sort((a,b) => a.c - b.c || a.r - b.r), timer: 0, done: false };
     result.destroyedCells.forEach(cell => createExplosion(cell.x, cell.y, cell.color, 8));
 
-    // Score popup mare în centrul tablei
-    const popupColor = result.totalCleared >= 3 ? '#ffd700' : result.totalCleared >= 2 ? '#00ffff' : '#ffffff';
-    addScorePopup(canvas.width / 2, 180, `+${totalPoints}`, popupColor);
+    const popupColor = feverMult > 1 ? '#ff4400' : result.totalCleared >= 3 ? '#ffd700' : result.totalCleared >= 2 ? '#00ffff' : '#ffffff';
+    addScorePopup(canvas.width / 2, 180, `+${totalPoints}${feverMult > 1 ? ' 🔥' : ''}`, popupColor);
     if (bonusStreak > 0) addScorePopup(canvas.width / 2, 210, `🔥 x${streakMultiplier} STREAK!`, '#ff8c00');
 
-    // Combo text + shake
     if (result.totalCleared >= 3) {
-      sounds.combo();
-      triggerShake(8);
+      sounds.combo(); triggerShake(8);
       comboFlash = { text: `${result.totalCleared}× COMBO!`, alpha: 1.0, timer: 90, color: '#ffd700' };
     } else if (result.totalCleared >= 2) {
-      sounds.combo();
-      triggerShake(4);
+      sounds.combo(); triggerShake(4);
       comboFlash = { text: `DOUBLE CLEAR!`, alpha: 1.0, timer: 75, color: '#00ffff' };
     } else {
-      sounds.clear();
-      triggerShake(2);
+      sounds.clear(); triggerShake(2);
     }
 
-    scor += totalPoints;
+    scor += totalPoints + dangerBonus;
   } else {
-    // Fără linie — reset streak
+
     streak = 0;
     streakMultiplier = 1;
     sounds.place();
-    addScorePopup(
-      (ghostGridX ?? 5) * grid.cellSize + grid.cellSize,
-      (ghostGridY ?? 5) * grid.cellSize,
-      '+10',
-      'rgba(255,255,255,0.5)'
-    );
-    scor += 10;
   }
 
   const geom = grid.checkGeometryBonus();
@@ -609,6 +781,25 @@ function handleMoveLogic() {
   }
 
   if (gameMode === 'endless') {
+
+    if (activeEvent) {
+      activeEvent.movesLeft--;
+      if (activeEvent.movesLeft <= 0) {
+        activeEvent = null;
+        comboFlash = { text: 'EVENIMENT TERMINAT', alpha: 1.0, timer: 60, color: '#888888' };
+      }
+    }
+
+    nextEventIn--;
+    if (nextEventIn <= 0) {
+      triggerRandomEvent();
+      nextEventIn = 8 + Math.floor(Math.random() * 5);
+    }
+
+
+    checkRisingRows();
+    if (screen === 'game_over') return;
+
     if (!grid.poate_plasa_orice(pieseDisponibile)) {
       for (let c = 0; c < grid.size; c++) grid.cells[grid.size - 1][c] = 0;
       streak = 0;
@@ -627,7 +818,7 @@ function handleMoveLogic() {
   startMoveTimer();
 }
 
-// ─── INTERACȚIUNE ─────────────────────────────────────────────────────────────
+
 canvas.addEventListener('pointerdown', (e: PointerEvent) => {
   if (screen !== 'playing') return;
 
@@ -685,7 +876,16 @@ window.addEventListener('pointerup', () => {
     if (index !== -1) {
       pieseDisponibile[index] = makePiece();
     }
-    scor += 10;
+
+    const cellCount = piesaSelectata.shape.flat().filter(v => v !== 0).length;
+    const placementPoints = cellCount * 50;
+    scor += placementPoints;
+    addScorePopup(
+      (ghostGridX + piesaSelectata.shape[0].length / 2) * grid.cellSize,
+      (ghostGridY) * grid.cellSize,
+      `+${placementPoints}`,
+      'rgba(255,255,255,0.8)'
+    );
     
     piesaSelectata = null;
     piesaInMana = false;
@@ -700,10 +900,14 @@ window.addEventListener('pointerup', () => {
   snapValid = false;
 });
 
-// ─── NAVIGARE BUTOANE ─────────────────────────────────────────────────────────
+
 document.getElementById('btn-play')!.addEventListener('click', () => {
   showOnly('screen-mode');
 });
+
+
+document.getElementById('btn-play')!.addEventListener('click', startMenuMusic, { once: true });
+document.getElementById('btn-tutorial')!.addEventListener('click', startMenuMusic, { once: true });
 
 document.getElementById('btn-tutorial')!.addEventListener('click', () => showOnly('screen-tutorial'));
 document.getElementById('btn-tutorial-back')!.addEventListener('click', () => showOnly('screen-menu'));
@@ -765,14 +969,17 @@ document.getElementById('btn-next')!.addEventListener('click', () => {
 
 document.getElementById('btn-win-restart')!.addEventListener('click', () => {
   showOnly('screen-menu');
+  startMenuMusic();
 });
 
 document.getElementById('btn-over-restart')!.addEventListener('click', () => {
   showOnly('screen-menu');
+  startMenuMusic();
 });
 
-// ─── START JOC ────────────────────────────────────────────────────────────────
+
 function startGame(mode: GameMode) {
+  stopMenuMusic();
   gameMode = mode;
   scor = 0;
   campaignLevel = 0;
@@ -783,6 +990,10 @@ function startGame(mode: GameMode) {
   levelTransition = null;
   comboFlash = null;
   clearAnim = null;
+  activeEvent = null;
+  nextEventIn = 8;
+  endlessWave = 0;
+  endlessScoreCheckpoint = 0;
   grid.reset();
   if (mode === 'campaign') {
     const lvl = getCurrentCustomLevel();
@@ -796,7 +1007,7 @@ function startGame(mode: GameMode) {
   if (mode === 'campaign') showLevelTitle(getCurrentCustomLevel().title);
 }
 
-// ─── RENDER LOOP ──────────────────────────────────────────────────────────────
+
 function drawGhostPreview() {
   if (!piesaSelectata || ghostGridX === null || ghostGridY === null) return;
 
@@ -829,7 +1040,7 @@ function drawComboFlash() {
   if (comboFlash.timer <= 0) { comboFlash = null; return; }
 
   const progress = 1 - comboFlash.timer / 90;
-  const y = 200 - progress * 40; // se ridică ușor
+  const y = 200 - progress * 40; 
 
   ctx.save();
   ctx.globalAlpha = comboFlash.alpha;
@@ -912,7 +1123,31 @@ function gameLoop() {
   if (screen === 'playing') {
     grid.draw(ctx);
 
-    // Animație dispariție celulă cu celulă
+
+    if (activeEvent && gameMode === 'endless') {
+      const evColors: Record<EventType, string> = { fever: '#ff4400', rush: '#00ffff' };
+      const evLabels: Record<EventType, string> = { fever: '🔥 FEVER', rush: '⚡ RUSH' };
+      const col = evColors[activeEvent.type];
+      const progress = activeEvent.movesLeft / activeEvent.totalMoves;
+      ctx.save();
+      ctx.fillStyle = 'rgba(0,0,0,0.6)';
+      ctx.fillRect(4, 2, 110, 22);
+      ctx.fillStyle = col;
+      ctx.fillRect(4, 2, 110 * progress, 22);
+      ctx.globalAlpha = 0.15;
+      ctx.fillStyle = col;
+      ctx.fillRect(4, 2, 110, 22);
+      ctx.globalAlpha = 1;
+      ctx.font = 'bold 9px Orbitron, sans-serif';
+      ctx.textAlign = 'left';
+      ctx.fillStyle = '#ffffff';
+      ctx.shadowBlur = 6; ctx.shadowColor = col;
+      ctx.fillText(`${evLabels[activeEvent.type]} ${activeEvent.movesLeft}`, 8, 16);
+      ctx.shadowBlur = 0;
+      ctx.restore();
+    }
+
+
     if (clearAnim && !clearAnim.done) {
       clearAnim.timer += 0.05;
       grid.drawClearAnim(ctx, clearAnim.cells, clearAnim.timer);

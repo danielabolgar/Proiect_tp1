@@ -18,7 +18,7 @@ export class Piece {
     return this.shape.map(row => [...row]);
   }
 
-  // Piese simple: 1–4 celule, ușor de plasat
+
   private simpleShapes(): number[][][] {
     return [
       [[1]],
@@ -35,7 +35,7 @@ export class Piece {
     ];
   }
 
-  // Piese complexe: 5+ celule, forme dificile
+
   private complexShapes(): number[][][] {
     return [
       [[1, 1, 1], [1, 1, 1], [1, 1, 1]],
