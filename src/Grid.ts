@@ -210,7 +210,6 @@ export class Grid {
     return 0;
   }
 
-  // Desenează animația de dispariție — flash alb pe celulele care se șterg
   drawClearAnim(ctx: CanvasRenderingContext2D, cells: {r:number,c:number}[], progress: number) {
     cells.forEach(({r, c}, i) => {
       const delay = i / cells.length;
@@ -237,17 +236,15 @@ export class Grid {
     this.cells = Array.from({ length: 10 }, () => Array(10).fill(0));
   }
 
-  // Pre-umple N celule random în jumătatea de jos (rândurile 5–9),
-  // garantând că nu blochează complet nicio coloană
+
   preFill(count: number) {
     let placed = 0;
     let tries = 0;
     while (placed < count && tries < 500) {
       tries++;
-      const r = 5 + Math.floor(Math.random() * 5); // doar jumătatea de jos
+      const r = 5 + Math.floor(Math.random() * 5); 
       const c = Math.floor(Math.random() * this.size);
       if (this.cells[r][c] !== 0) continue;
-      // Verifică să nu umplem complet o coloană
       const colFilled = this.cells.filter(row => row[c] !== 0).length;
       if (colFilled >= this.size - 2) continue;
       this.cells[r][c] = 1;
